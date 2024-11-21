@@ -1,0 +1,17 @@
+Metadata-Version: 2.1
+Name: lattDesc
+Version: 0.0.1
+Summary: Lattice descent algorithms in JAX
+Home-page: UNKNOWN
+Author: Diego Marcondes
+Author-email: <dmarcondes@ime.usp.br>
+License: UNKNOWN
+Keywords: python,JAX,lattice descent
+Platform: UNKNOWN
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Researchers
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: Linux :: Ubuntu
+
+Lattice descent algorithms in JAX
+
