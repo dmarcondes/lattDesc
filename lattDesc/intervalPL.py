@@ -4,7 +4,7 @@ from jax import numpy as jnp
 from lattDesc import data as dt
 from lattDesc import utils as ut
 import math
-import numpy as np
+import time
 
 #Stochastic Descent on the Boolean Interval Partition Lattice
 def sdesc_BIPL(train,val,test = None,sample = 10,key = 0):
@@ -35,16 +35,16 @@ domain = domain.at[-1,0].set(0)
 
 #Initial partition
 intervals = -1 + jnp.zeros((1,d)) #Matrix with intervals
-block = np.array([0]) #Vector with block of each interval
+block = jnp.array([0]) #Vector with block of each interval
 points = list() #List with the sample points in each interval
 points.append(domain)
-number_points_block = jnp.sum(domain[:,0]).reshape((1,)) #Vector with sample points in each block
-number_points_intervals = jnp.sum(domain[:,0]).reshape((1,)) #Vector with sample points in each interval
-blocks_error = np.array(ut.error_block_partition(points[0],nval,key[k,0])).reshape((1,)) #Validation error of each block
+npoints_block = jnp.sum(domain[:,0]).reshape((1,)) #Vector with sample points in each block
+npoints_intervals = jnp.sum(domain[:,0]).reshape((1,)) #Vector with sample points in each interval
+intervals_error = jnp.array(ut.error_block_partition(points[0],nval,key[k,0])).reshape((1,)) #Validation error of each block
 k = k + 1
 
 #Store error
-current_error = blocks_error
+current_error = intervals_error
 best_error = current_error.copy()
 best_intervals = intervals.copy()
 best_block = block.copy()
@@ -52,8 +52,8 @@ best_block = block.copy()
 #For each epoch
 for e in range(epochs):
 #Sampling probabilities for greater or smaller neighbors
-small = jnp.array(math.comb(number_points.shape[0],2))
-great = jnp.sum(number_points)
+small = jnp.array(math.comb(npoints.shape[0],2))
+great = jnp.sum(npoints)
 p1 = jnp.append(small,great)
 
 #Sample neighbors
@@ -68,15 +68,40 @@ if jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array([True,False]),shape
     #To be continued...
 else:
 #Which block to break
-b_break = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(np.max(block) + 1))),shape=(1,),p = number_points_block/jnp.sum(number_points_block))
+b_break = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(np.max(block) + 1))),shape=(1,),p = npoints_block/jnp.sum(npoints_block))
 k = k + 1
 #Break a block
-broken_block = ut.break_block(b_break,intervals,block,points,number_points_block,number_points_intervals,key[k,0])
-k = k + 1
+for k in range(100):
+    print(k)
+    b_break = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,),p = npoints_block/jnp.sum(npoints_block))
+    tinit = time.time()
+    block,intervals,points,npoints_block,npoints_intervals = ut.take_step(b_break,intervals,block,points.copy(),npoints_block,npoints_intervals,nval,key[k,0])
+    print(time.time() - tinit)
+    #err = ut.evaluate_neighbor(b_break,intervals,block,points.copy(),npoints_block,npoints_intervals,intervals_error,nval,key[k,0])
+    #print(time.time() - tinit)
 
+    #print(jnp.sum(intervals_error))
+    if jnp.max(block) != k + 1 or jnp.min(block) != 0:
+        break
+    if intervals.shape[0] == 1:
+        break
+    if jnp.min(jnp.sum(intervals == -1,1)) == 0:
+        break
+    if jnp.unique(jnp.vstack(points),axis = 0).shape[0] != domain.shape[0]:
+        break
+    #if jnp.sum(npoints_block) != domain.shape[0]:
+    #    break
+    #if jnp.sum(npoints_intervals) != domain.shape[0]:
+    #    break
+    if len(block) != intervals.shape[0]:
+        break
+    if len(npoints_intervals) != intervals.shape[0]:
+        break
+    if len(npoints_block) != jnp.max(block) + 1:
+        break
+
+key = key[k,0]
 #Error
 nei_error = current_error.copy()
-nei_error = nei_error.at[jnp.where(block == block_break)].set(ut.error_block_partition(block_break,broken_block['points_part_train'],broken_block['points_part_val'],tab_train,tab_val,key[k,0]))
-nei_error = jnp.append(nei_error,ut.error_block_partition(jnp.max(block) + 1,broken_block['points_part_train'],broken_block['points_part_val'],tab_train,tab_val,key[k,0]))
-
+ut.error_block_partition(points[0],nval,key[k,0])
 #

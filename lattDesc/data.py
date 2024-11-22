@@ -34,15 +34,12 @@ def synthetic_binary_data(n,d,key):
     key = jax.random.split(jax.random.PRNGKey(key),n+3)
     prob = jax.random.uniform(key = jax.random.PRNGKey(key[0,0]),shape = (2 ** d,),minval = 0,maxval = 100)
     prob = prob/jnp.sum(prob)
-
     #Generate probability of conditioned distribution
     prob_cond = jax.random.uniform(key = jax.random.PRNGKey(key[1,0]),shape = (2 ** d,),minval = 0,maxval = 1)
-
     #Generate inout points
     index = jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array(list(range(2 ** d))), shape=(n,),replace = True,p = prob)
     domain = jnp.array([i for i in product(range(2),repeat = d)])
     x = domain[index,:]
-
     #Generate output points
     y = []
     for i in range(n):
