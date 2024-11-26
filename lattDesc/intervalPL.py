@@ -40,11 +40,11 @@ points = list() #List with the sample points in each interval
 points.append(domain)
 npoints_block = jnp.sum(domain[:,0]).reshape((1,)) #Vector with sample points in each block
 npoints_intervals = jnp.sum(domain[:,0]).reshape((1,)) #Vector with sample points in each interval
-intervals_error = jnp.array(ut.error_block_partition(points[0],nval,key[k,0])).reshape((1,)) #Validation error of each block
+block_error = jnp.array(ut.error_block_partition(points[0],nval,key[k,0])).reshape((1,)) #Validation error of each block
 k = k + 1
 
 #Store error
-current_error = intervals_error
+current_error = block_error
 best_error = current_error.copy()
 best_intervals = intervals.copy()
 best_block = block.copy()
@@ -68,17 +68,17 @@ if jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array([True,False]),shape
     #To be continued...
 else:
 #Which block to break
-b_break = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(np.max(block) + 1))),shape=(1,),p = npoints_block/jnp.sum(npoints_block))
+b_break = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,),p = npoints_block/jnp.sum(npoints_block))
 k = k + 1
 #Break a block
 for k in range(100):
     print(k)
     b_break = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,),p = npoints_block/jnp.sum(npoints_block))
     tinit = time.time()
-    block,intervals,points,npoints_block,npoints_intervals = ut.take_step(b_break,intervals,block,points.copy(),npoints_block,npoints_intervals,nval,key[k,0])
+    error_nei = ut.sample_neighbor(b_break,intervals,block,points.copy(),npoints_block,npoints_intervals,block_error,nval,domain,step = False,key = key[k,0])
     print(time.time() - tinit)
     #err = ut.evaluate_neighbor(b_break,intervals,block,points.copy(),npoints_block,npoints_intervals,intervals_error,nval,key[k,0])
-    #print(time.time() - tinit)
+    print(error_nei)
 
     #print(jnp.sum(intervals_error))
     if jnp.max(block) != k + 1 or jnp.min(block) != 0:
