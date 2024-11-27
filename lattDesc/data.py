@@ -35,7 +35,7 @@ def synthetic_binary_data(n,d,key):
     prob = jax.random.uniform(key = jax.random.PRNGKey(key[0,0]),shape = (2 ** d,),minval = 0,maxval = 100)
     prob = prob/jnp.sum(prob)
     #Generate probability of conditioned distribution
-    prob_cond = jax.random.uniform(key = jax.random.PRNGKey(key[1,0]),shape = (2 ** d,),minval = 0,maxval = 1)
+    prob_cond = jax.random.choice(jax.random.PRNGKey(key[1,0]), jnp.array([0,1]),shape = (2 ** d,))
     #Generate inout points
     index = jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array(list(range(2 ** d))), shape=(n,),replace = True,p = prob)
     domain = jnp.array([i for i in product(range(2),repeat = d)])
@@ -77,7 +77,7 @@ def get_fpoint(x,data):
     return jnp.append(zero,one)
 
 #Get frequence table
-def get_ftable(data):
+def get_ftable(data,unique):
     """
     Get empirical frequencies of data matrix
     -------
@@ -88,6 +88,10 @@ def get_ftable(data):
 
         Data matrix
 
+    unique : logical
+
+        If data is unique
+
     Returns
     -------
 
@@ -95,7 +99,9 @@ def get_ftable(data):
 
     """
     #Get dimension
-    d = data.shape[1] - 1
-    domain = jnp.unique(data[:,:-1],axis = 0)
+    if not unique:
+        domain = jnp.unique(data[:,:-1],axis = 0)
+    else:
+        domain = data[:,:-1]
     f = jax.vmap(lambda x: get_fpoint(x,data))(domain)
     return jnp.append(domain,f,1)
