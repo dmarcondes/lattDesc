@@ -173,8 +173,8 @@ def error_block_partition(tab,nval,key):
 #Get error partition
 def get_error_partition(tab,intervals,block,nval,key):
     error = 0
-    for i in range(jnp.max(block)):
-        tab_block = tab[get_elements_some_interval(intervals[block == i,:],tab[:,1:-4,]),:]
+    for i in range(jnp.max(block) + 1):
+        tab_block = tab[get_elements_some_interval(intervals[block == i,:],tab[:,0:-4,]),:]
         error = error + error_block_partition(tab_block,nval,key)
     return error
 
@@ -205,14 +205,15 @@ def sample_inf(new_interval,break_interval):
     return jnp.where((break_interval == -1.0)*(new_interval == 0.0),-1.0,new_interval)
 
 #Sample interval
-def sample_interval(b_break,intervals,block,npoints_intervals,points,key):
+def sample_interval(b_break,intervals,block,domain,key):
     #Sample an interval in this block to break on
-    index_interval = jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.array(list(range(intervals.shape[0]))),shape=(1,),p = jnp.where(block == b_break,npoints_intervals,0))
+    index_interval = jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.array(list(range(intervals.shape[0]))),shape=(1,),p = jnp.where(block == b_break,1,0))
     break_interval = intervals[index_interval,:]
     #Sample a point in this interval to break on
-    point = jax.random.choice(jax.random.PRNGKey(key[1,0]), jnp.array(list(range(points[index_interval[0]].shape[0]))),shape=(1,),p = points[index_interval[0]][:,0])
+    points = domain[get_elements_interval(break_interval,domain[:,0:-4]),:]
+    point = jax.random.choice(jax.random.PRNGKey(key[1,0]), jnp.array(list(range(points.shape[0]))),shape=(1,))#,p = points[index_interval[0]][:,0])
     #Break inf or sup
-    new_interval = points[index_interval[0]][point,1:-4]
+    new_interval = points[point,0:-4]
     inf_sup = jnp.repeat(jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape=(1,)),new_interval.shape[1])
     new_interval_sup = sample_inf(new_interval,break_interval)
     new_interval_inf = sample_sup(new_interval,break_interval)
@@ -243,88 +244,48 @@ def reduce(intervals):
     return intervals,True
 
 #Sample neighbor
-def sample_neighbor(b_break,intervals,block,points,npoints_block,npoints_intervals,block_error,nval,domain,step,key):
+def sample_neighbor(b_break,intervals,block,nval,domain,step,key):
     #Seed
-    key = jax.random.split(jax.random.PRNGKey(key),100000)
-
+    key = jax.random.split(jax.random.PRNGKey(key),10)
     #Sample interval
-    new_interval,break_interval,index_interval = sample_interval(b_break,intervals,block,npoints_intervals,points,key)
-
+    new_interval,break_interval,index_interval = sample_interval(b_break,intervals,block,domain,key)
     #Compute interval cover of complement
     where_fill = jnp.where((new_interval != -1.0)*(break_interval == -1.0))[1]
     where_fill = jax.random.permutation(jax.random.PRNGKey(key[3,0]), where_fill)
     wf_size = where_fill.shape[0]
     where_fill = jnp.append(jnp.zeros((new_interval.shape[1] - wf_size)),where_fill).astype(jnp.int32)
     cover_intervals = cover_break_interval(new_interval,where_fill)[-(wf_size + 1):,:]
-
     #Divide into two blocks
     division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[4,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0]-2,),replace = True))
     division_old = jax.random.choice(jax.random.PRNGKey(key[5,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (jnp.sum(block == b_break)-1,),replace = True)
-
     #Update partition
     intervals,block,max_block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
-
     #Compute error
-    part1 = get_elements_some_interval(intervals[block == b_break,],domain[:,1:-4])
-    e1 = error_block_partition(domain[part1,:],nval,key[6,0])
-    part2 = get_elements_some_interval(intervals[block == jnp.max(block),],domain[:,1:-4])
-    e2 = error_block_partition(domain[part2,:],nval,key[7,0])
-    block_error = block_error.at[b_break].set(e1)
-    block_error = jnp.append(block_error,e2)
-
+    error = get_error_partition(domain,intervals,block,nval,key[6,0])
     if not step:
-        return jnp.sum(block_error)
+        return error
     else:
-        #Update points
-        old_points = points[index_interval[0]].copy()
-        del points[index_interval[0]]
-        npoints_intervals = jnp.delete(npoints_intervals,index_interval[0])
-        for i in range(cover_intervals.shape[0]):
-            tmp_domain = old_points[get_elements_interval(cover_intervals[i,:],old_points[:,1:-4]),:]
-            tmp_domain = tmp_domain.at[:,0].set(1.0)
-            tmp_domain = tmp_domain.at[jax.vmap(lambda x: test_limit_interval(cover_intervals[i,:],x))(tmp_domain[:,1:-4]),0].set(0)
-            points.append(tmp_domain)
-            npoints_intervals = jnp.append(npoints_intervals,jnp.sum(points[-1][:,0]))
-
-        npoints_block = npoints_block.at[b_break].set(jnp.sum(npoints_intervals[block == b_break]))
-        npoints_block = jnp.append(npoints_block,jnp.sum(npoints_intervals[block == jnp.max(block)]))
-    return block,intervals,points,npoints_block,npoints_intervals,block_error
+        return block,intervals
 
 #Unite two blocks
-def unite_blocks(unite,intervals,block,points,npoints_block,npoints_intervals,block_error,nval,domain,step,key):
+def unite_blocks(unite,intervals,block,nval,domain,step,key):
     #Seed
-    key = jax.random.split(jax.random.PRNGKey(key),100)
+    key = jax.random.split(jax.random.PRNGKey(key),10)
     #Get error
     which_intervals = jnp.where((block == unite[0]) + (block == unite[1]) > 0)[0]
-    new_points = jnp.vstack(list(compress(points,(block == unite[0]) + (block == unite[1]) > 0)))
-    new_error = error_block_partition(new_points,nval,key[0,0])
+    unite_intervals = intervals[which_intervals,:]
+    intervals = jnp.delete(intervals,which_intervals,0)
+    block = jnp.delete(block,which_intervals)
+    #Try to reduce
+    reduced = False
+    while(not reduced):
+        unite_intervals,reduced = reduce(unite_intervals)
+    intervals = jnp.append(intervals,unite_intervals,0)
+    block = jnp.append(block,jnp.repeat(jnp.min(unite),unite_intervals.shape[0]))
+    block = block.at[jnp.where(block > jnp.max(unite))].set(block[jnp.where(block > jnp.max(unite))] - 1)
+    #Compute error
+    error = get_error_partition(domain,intervals,block,nval,key[0,0])
     if not step:
-        return jnp.sum(jnp.delete(block_error,unite)) + new_error
+        return error
     else:
-        #Get points in intervals
-        for i in jnp.flip(which_intervals):
-            del points[i]
-        #Erase
-        unite_intervals = intervals[which_intervals,:]
-        intervals = jnp.delete(intervals,which_intervals,0)
-        block = jnp.delete(block,which_intervals)
-        npoints_intervals = jnp.delete(npoints_intervals,which_intervals)
-        #Try to reduce
-        reduced = False
-        while(not reduced):
-            unite_intervals,reduced = reduce(unite_intervals)
-        intervals = jnp.append(intervals,unite_intervals,0)
-        block = jnp.append(block,jnp.repeat(jnp.min(unite),unite_intervals.shape[0]))
-        block = block.at[jnp.where(block > jnp.max(unite))].set(block[jnp.where(block > jnp.max(unite))] - 1)
-        #Add points
-        for i in range(unite_intervals.shape[0]):
-            tmp_domain = new_points[get_elements_interval(unite_intervals[i,:],new_points[:,1:-4]),:]
-            tmp_domain = tmp_domain.at[:,0].set(1.0)
-            tmp_domain = tmp_domain.at[jax.vmap(lambda x: test_limit_interval(unite_intervals[i,:],x))(tmp_domain[:,1:-4]),0].set(0)
-            points.append(tmp_domain)
-            npoints_intervals = jnp.append(npoints_intervals,jnp.sum(points[-1][:,0]))
-        block_error =  block_error.at[jnp.min(unite)].set(new_error)
-        block_error = jnp.delete(block_error,jnp.max(unite))
-        npoints_block = npoints_block.at[jnp.min(unite)].set(jnp.sum(npoints_intervals[block == jnp.min(unite)]))
-        npoints_block = jnp.delete(npoints_block,jnp.max(unite))
-        return block,intervals,points,npoints_block,npoints_intervals,block_error
+        return block,intervals
