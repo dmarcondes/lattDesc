@@ -23,23 +23,9 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
     if test is not None:
         tab_test = dt.get_ftable(test,unique)
 
-    #Gather frequency tables in one array
-    print('- Creating arrays')
-    if not unique:
-        domain = jnp.unique(jnp.append(jnp.append(jnp.zeros((1,d + 1)),1 + jnp.zeros((1,d + 1)),0),jnp.append(train,val,0),0)[:,:-1],axis = 0)
-    else:
-        domain = jnp.append(jnp.append(jnp.zeros((1,d + 1)),1 + jnp.zeros((1,d + 1)),0),jnp.append(train,val,0),0)[:,:-1]
-
-    index_train = jax.vmap(lambda x: jnp.where((domain == x).all(-1),jnp.array(list(range(domain.shape[0]))),0).sum())(tab_train[:,:-2])
-    index_val = jax.vmap(lambda x: jnp.where((domain == x).all(-1),jnp.array(list(range(domain.shape[0]))),0).sum())(tab_val[:,:-2])
-    domain = jnp.append(domain,jnp.zeros((domain.shape[0],4)),1)
-    domain = domain.at[index_train,-4].set(tab_train[:,-2])
-    domain = domain.at[index_train,-3].set(tab_train[:,-1])
-    domain = domain.at[index_val,-2].set(tab_val[:,-2])
-    domain = domain.at[index_val,-1].set(tab_val[:,-1])
-
     #Batches Size
-    bsize = math.floor(domain.shape[0]/batches)
+    bsize = math.floor(tab_train.shape[0]/batches)
+    bsize_val = math.floor(tab_val.shape[0]/batches)
 
     #Initial partition
     print('- Initializing objects')
@@ -47,7 +33,7 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
     block = jnp.array([0]) #Vector with block of each interval
 
     #Store error
-    current_error = ut.get_error_partition(domain,intervals,block,nval,key[k,0])
+    current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0])
     k = k + 1
     best_error = current_error
     best_intervals = intervals.copy()
@@ -59,14 +45,24 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
     with alive_bar(epochs) as bar:
         for e in range(epochs):
             print(' Error: ' + str(round(best_error,3)))
-            domain = jax.random.permutation(jax.random.PRNGKey(key[k,0]), domain,0)
+            tab_train = jax.random.permutation(jax.random.PRNGKey(key[k,0]), tab_train,0)
+            k = k + 1
+            tab_val = jax.random.permutation(jax.random.PRNGKey(key[k,0]), tab_val,0)
             k = k + 1
             for b in range(batches):
                 if b < batches - 1:
-                    tab_batch = domain[((b-1)*bsize):(b*bsize),:]
+                    tab_train_batch = tab_train[((b-1)*bsize):(b*bsize),:]
                 else:
-                    tab_batch = domain[((b-1)*bsize):,:]
-                bnval = jnp.sum(tab_batch[:,-2:])
+                    tab_train_batch = tab_train[((b-1)*bsize):,:]
+                if batch_val:
+                    if b < batches - 1:
+                        tab_val_batch = tab_val[((b-1)*bsize):(b*bsize),:]
+                    else:
+                        tab_val_batch = tab_val[((b-1)*bsize):,:]
+                    bnval = jnp.sum(tab_val_batch[:,-2:])
+                else:
+                    tab_val_batch = tab_val
+                    bnval = nval
                 #Sample neighbors
                 error_batch = []
                 kn = []
@@ -85,7 +81,7 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                         #Which to unite
                         unite = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(2,),replace = False)
                         k = k + 1
-                        error_nei = ut.unite_blocks(unite,intervals,block,bnval,tab_batch,step = False,key = key[k,0])
+                        error_nei = ut.unite_blocks(unite,intervals,block,bnval,tab_train_batch,tab_val_batch,step = False,key = key[k,0])
                         k = k + 1
                         error_batch = error_batch + [error_nei.tolist()]
                         kn = kn + [k - 2]
@@ -95,7 +91,7 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                         #Which block to break
                         b_break = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,))#,p = npoints_block/jnp.sum(npoints_block))
                         k = k + 1
-                        error_nei = ut.sample_neighbor(b_break,intervals,block,bnval,tab_batch,step = False,key = key[k,0])
+                        error_nei = ut.sample_neighbor(b_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = False,key = key[k,0])
                         k = k + 1
                         error_batch = error_batch + [error_nei.tolist()]
                         kn = kn + [k - 2]
@@ -108,19 +104,20 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                 if move == 'break':
                     b_break = jax.random.choice(jax.random.PRNGKey(key[kn,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,))#,p = npoints_block/jnp.sum(npoints_block))
                     kn = kn + 1
-                    block,intervals = ut.sample_neighbor(b_break,intervals,block,bnval,tab_batch,step = True,key = key[kn,0])
+                    block,intervals = ut.sample_neighbor(b_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[kn,0])
                 else:
                     unite = jax.random.choice(jax.random.PRNGKey(key[kn,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(2,),replace = False)
                     kn = kn + 1
-                    block,intervals = ut.unite_blocks(unite,intervals,block,bnval,tab_batch,step = True,key = key[kn,0])
+                    block,intervals = ut.unite_blocks(unite,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[kn,0])
             #Get error current partition
-            current_error = ut.get_error_partition(domain,intervals,block,nval,key[k,0])
+            current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0])
             k = k + 1
             #Store as best
             if current_error < best_error:
                 best_error = current_error
                 best_intervals = intervals.copy()
                 best_block = block.copy()
+            print(intervals)
             if test_phase:
                 if jnp.min(jnp.sum(intervals == -1,1)) == 0:
                     print('E2')

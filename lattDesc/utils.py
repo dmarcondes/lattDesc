@@ -136,7 +136,7 @@ def get_elements_some_interval(intervals,data):
 
 #Compute error of a block
 @jax.jit
-def error_block_partition(tab,nval,key):
+def error_block_partition(tab_train,tab_val,nval,key):
     """
     Compute the error a block
     -------
@@ -162,20 +162,21 @@ def error_block_partition(tab,nval,key):
 
     """
     #Estimate class
-    freq = jnp.sum(tab[:,-4:-2],0)
+    freq = jnp.sum(tab_train[:,-2:],0)
     pred = jnp.where(freq == jnp.max(freq),False,True)
     pred = pred.at[0].set(jax.random.choice(jax.random.PRNGKey(key), jnp.array([False,True]),shape=(1,),p = 1 - pred)[0])
     pred = pred.at[1].set(jax.random.choice(jax.random.PRNGKey(key+1), jnp.array([False,True]),shape=(1,),p = jnp.append(pred[0],1 - pred[0]))[0])
-    freq_val = jnp.sum(tab[:,-2:],0)
+    freq_val = jnp.sum(tab_val[:,-2:],0)
     err = jnp.where(pred,freq_val,0)
     return jnp.sum(err)/nval
 
 #Get error partition
-def get_error_partition(tab,intervals,block,nval,key):
+def get_error_partition(tab_train,tab_val,intervals,block,nval,key):
     error = 0
     for i in range(jnp.max(block) + 1):
-        tab_block = tab[get_elements_some_interval(intervals[block == i,:],tab[:,0:-4,]),:]
-        error = error + error_block_partition(tab_block,nval,key)
+        tab_train_block = tab_train[get_elements_some_interval(intervals[block == i,:],tab_train[:,0:-2,]),:]
+        tab_val_block = tab_val[get_elements_some_interval(intervals[block == i,:],tab_val[:,0:-2,]),:]
+        error = error + error_block_partition(tab_train_block,tab_val_block,nval,key)
     return error
 
 #Break interval at new interval
@@ -210,10 +211,10 @@ def sample_interval(b_break,intervals,block,domain,key):
     index_interval = jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.array(list(range(intervals.shape[0]))),shape=(1,),p = jnp.where(block == b_break,1,0))
     break_interval = intervals[index_interval,:]
     #Sample a point in this interval to break on
-    points = domain[get_elements_interval(break_interval,domain[:,0:-4]),:]
+    points = domain[get_elements_interval(break_interval,domain[:,0:-2]),:]
     point = jax.random.choice(jax.random.PRNGKey(key[1,0]), jnp.array(list(range(points.shape[0]))),shape=(1,))#,p = points[index_interval[0]][:,0])
     #Break inf or sup
-    new_interval = points[point,0:-4]
+    new_interval = points[point,0:-2]
     inf_sup = jnp.repeat(jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape=(1,)),new_interval.shape[1])
     new_interval_sup = sample_inf(new_interval,break_interval)
     new_interval_inf = sample_sup(new_interval,break_interval)
@@ -244,11 +245,11 @@ def reduce(intervals):
     return intervals,True
 
 #Sample neighbor
-def sample_neighbor(b_break,intervals,block,nval,domain,step,key):
+def sample_neighbor(b_break,intervals,block,nval,tab_train,tab_val,step,key):
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Sample interval
-    new_interval,break_interval,index_interval = sample_interval(b_break,intervals,block,domain,key)
+    new_interval,break_interval,index_interval = sample_interval(b_break,intervals,block,tab_train,key)
     #Compute interval cover of complement
     where_fill = jnp.where((new_interval != -1.0)*(break_interval == -1.0))[1]
     where_fill = jax.random.permutation(jax.random.PRNGKey(key[3,0]), where_fill)
@@ -261,14 +262,14 @@ def sample_neighbor(b_break,intervals,block,nval,domain,step,key):
     #Update partition
     intervals,block,max_block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
     #Compute error
-    error = get_error_partition(domain,intervals,block,nval,key[6,0])
+    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[6,0])
     if not step:
         return error
     else:
         return block,intervals
 
 #Unite two blocks
-def unite_blocks(unite,intervals,block,nval,domain,step,key):
+def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key):
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Get error
@@ -284,7 +285,7 @@ def unite_blocks(unite,intervals,block,nval,domain,step,key):
     block = jnp.append(block,jnp.repeat(jnp.min(unite),unite_intervals.shape[0]))
     block = block.at[jnp.where(block > jnp.max(unite))].set(block[jnp.where(block > jnp.max(unite))] - 1)
     #Compute error
-    error = get_error_partition(domain,intervals,block,nval,key[0,0])
+    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[0,0])
     if not step:
         return error
     else:
