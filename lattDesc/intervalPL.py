@@ -8,7 +8,7 @@ import time
 from alive_progress import alive_bar
 
 #Stochastic Descent on the Boolean Interval Partition Lattice
-def sdesc_BIPL(epochs,train,val,test = None,sample = 10,key = 0,unique = False):
+def sdesc_BIPL(epochs,train,val,test = None,sample = 10,key = 0,unique = False,test_phase = False):
     print('------Starting algorithm------')
     #Start seed
     key = jax.random.split(jax.random.PRNGKey(key),3*epochs)
@@ -115,23 +115,24 @@ def sdesc_BIPL(epochs,train,val,test = None,sample = 10,key = 0,unique = False):
                 best_error = current_error
                 best_intervals = intervals.copy()
                 best_block = block.copy()
-            if jnp.abs(current_error - jnp.sum(block_error)) > 1e-06:
-                print('E1')
-                break
-            if jnp.min(jnp.sum(intervals == -1,1)) == 0:
-                print('E2')
-                break
-            if jnp.unique(jnp.vstack(points),axis = 0).shape[0] != domain.shape[0]:
-                print('E3')
-                break
-            if len(block) != intervals.shape[0]:
-                print('E4')
-                break
-            if len(npoints_intervals) != intervals.shape[0]:
-                print('E5')
-                break
-            if len(npoints_block) != jnp.max(block) + 1:
-                print('E6')
-                break
+            if test_phase:
+                if jnp.abs(current_error - jnp.sum(block_error)) > 1e-06:
+                    print('E1')
+                    break
+                if jnp.min(jnp.sum(intervals == -1,1)) == 0:
+                    print('E2')
+                    break
+                if jnp.unique(jnp.vstack(points),axis = 0).shape[0] != domain.shape[0]:
+                    print('E3')
+                    break
+                if len(block) != intervals.shape[0]:
+                    print('E4')
+                    break
+                if len(npoints_intervals) != intervals.shape[0]:
+                    print('E5')
+                    break
+                if len(npoints_block) != jnp.max(block) + 1:
+                    print('E6')
+                    break
             bar()
     return block,intervals,points,block_error

@@ -58,7 +58,7 @@ def cover_break_interval(new_interval,where_fill):
             cover_intervals = tmp
         else:
             cover_intervals = jnp.append(cover_intervals,tmp,0)
-    cover_intervals = jnp.append(new_interval,cover_intervals,0)
+    cover_intervals = jnp.append(cover_intervals,new_interval,0)
     return cover_intervals
 
 #Get interval as sup
@@ -124,8 +124,7 @@ def sample_neighbor(b_break,intervals,block,points,npoints_block,npoints_interva
     where_fill = jax.random.permutation(jax.random.PRNGKey(key[3,0]), where_fill)
     wf_size = where_fill.shape[0]
     where_fill = jnp.append(jnp.zeros((new_interval.shape[1] - wf_size)),where_fill).astype(jnp.int32)
-    cover_intervals = cover_break_interval(new_interval,where_fill)
-    cover_intervals = jnp.append(cover_intervals[0,:],cover_intervals[-wf_size:,:],0)
+    cover_intervals = cover_break_interval(new_interval,where_fill)[-(wf_size + 1):,:]
 
     #Divide into two blocks
     division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[4,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0]-2,),replace = True))
@@ -149,6 +148,8 @@ def sample_neighbor(b_break,intervals,block,points,npoints_block,npoints_interva
         old_points = points[index_interval[0]].copy()
         del points[index_interval[0]]
         npoints_intervals = jnp.delete(npoints_intervals,index_interval[0])
+        print('Entrou')
+        tinit = time.time()
         for i in range(cover_intervals.shape[0]):
             tmp_domain = old_points[get_elements_interval(cover_intervals[i,:],old_points[:,1:-4]),:]
             tmp_domain = tmp_domain.at[:,0].set(1.0)
@@ -156,6 +157,7 @@ def sample_neighbor(b_break,intervals,block,points,npoints_block,npoints_interva
             points.append(tmp_domain)
             npoints_intervals = jnp.append(npoints_intervals,jnp.sum(points[-1][:,0]))
 
+        print(time.time() - tinit)
         npoints_block = npoints_block.at[b_break].set(jnp.sum(npoints_intervals[block == b_break]))
         npoints_block = jnp.append(npoints_block,jnp.sum(npoints_intervals[block == jnp.max(block)]))
     return block,intervals,points,npoints_block,npoints_intervals,block_error
