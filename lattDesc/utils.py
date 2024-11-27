@@ -8,18 +8,78 @@ from itertools import compress
 #Test if element in interval
 @jax.jit
 def test_interval(interval,x):
+    """
+    Test if element is in interval
+    -------
+
+    Parameters
+    ----------
+    interval : jax numpy array
+
+        Interval
+
+    x : jax numpy array
+
+        Element
+
+    Returns
+    -------
+
+    logical
+
+    """
     fixed = jnp.where(interval >= 0,1,0)
     return jnp.sum(jnp.where(fixed == 1,x != interval,False)) == 0
 
 #Test if element not in interval
 jax.jit
 def test_not_interval(interval,x):
+    """
+    Test if element is not in interval
+    -------
+
+    Parameters
+    ----------
+    interval : jax numpy array
+
+        Interval
+
+    x : jax numpy array
+
+        Element
+
+    Returns
+    -------
+
+    logical
+
+    """
     fixed = jnp.where(interval >= 0,1,0)
     return jnp.sum(jnp.where(fixed == 1,x != interval,False)) != 0
 
 #Teste if element is limit of interval (we know it is in interval)
 @jax.jit
 def test_limit_interval(interval,x):
+    """
+    Test if element is the limit of an interval
+    -------
+
+    Parameters
+    ----------
+    interval : jax numpy array
+
+        Interval
+
+    x : jax numpy array
+
+        Element
+
+    Returns
+    -------
+
+    logical
+
+    """
     x_max = jnp.where(interval < 0,x,-1)
     x_min = jnp.where(interval < 0,x,1)
     return jnp.max(x_max) == jnp.min(x_min)
@@ -27,16 +87,80 @@ def test_limit_interval(interval,x):
 #Get elements in interval
 @jax.jit
 def get_elements_interval(interval,data):
+    """
+    Flag the elements in dataset that are in a interval
+    -------
+
+    Parameters
+    ----------
+    interval : jax numpy array
+
+        Interval
+
+    data : jax numpy array
+
+        Dataset
+
+    Returns
+    -------
+
+    jax numpy array of logical
+
+    """
     return jax.vmap(lambda x: test_interval(interval,x))(data)
 
 #Get elements in some interval
 @jax.jit
 def get_elements_some_interval(intervals,data):
+    """
+    Flag the elements in dataset that are in some interval in a set
+    -------
+
+    Parameters
+    ----------
+    intervals : jax numpy array
+
+        A set of intervals
+
+    data : jax numpy array
+
+        Dataset
+
+    Returns
+    -------
+
+    jax numpy array of logical
+
+    """
     return jnp.sum(jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals),0) > 0
 
 #Compute error of a block
 @jax.jit
 def error_block_partition(tab,nval,key):
+    """
+    Compute the error a block
+    -------
+
+    Parameters
+    ----------
+    tab : jax numpy array
+
+        Sample points that are in the block in the format (prob_sample,points,tab_train,tab_val)
+
+    nval : int
+
+        Size of validation sample
+
+    key : int
+
+        Key for random classification in the presence of ties
+
+    Returns
+    -------
+
+    float
+
+    """
     #Estimate class
     freq = jnp.sum(tab[:,-4:-2],0)
     pred = jnp.where(freq == jnp.max(freq),False,True)
@@ -45,6 +169,14 @@ def error_block_partition(tab,nval,key):
     freq_val = jnp.sum(tab[:,-2:],0)
     err = jnp.where(pred,freq_val,0)
     return jnp.sum(err)/nval
+
+#Get error partition
+def get_error_partition(tab,intervals,block,nval,key):
+    error = 0
+    for i in range(jnp.max(block)):
+        tab_block = tab[get_elements_some_interval(intervals[block == i,:],tab[:,1:-4,]),:]
+        error = error + error_block_partition(tab_block,nval,key)
+    return error
 
 #Break interval at new interval
 @jax.jit
@@ -99,7 +231,6 @@ def update_partition(b_break,intervals,cover_intervals,block,index_interval,divi
     return intervals,block,max_block
 
 #One step reduction
-@jax.jit
 def reduce(intervals):
     for i in range(intervals.shape[0] - 1):
         for j in range(i + 1,intervals.shape[0]):
@@ -148,8 +279,6 @@ def sample_neighbor(b_break,intervals,block,points,npoints_block,npoints_interva
         old_points = points[index_interval[0]].copy()
         del points[index_interval[0]]
         npoints_intervals = jnp.delete(npoints_intervals,index_interval[0])
-        print('Entrou')
-        tinit = time.time()
         for i in range(cover_intervals.shape[0]):
             tmp_domain = old_points[get_elements_interval(cover_intervals[i,:],old_points[:,1:-4]),:]
             tmp_domain = tmp_domain.at[:,0].set(1.0)
@@ -157,7 +286,6 @@ def sample_neighbor(b_break,intervals,block,points,npoints_block,npoints_interva
             points.append(tmp_domain)
             npoints_intervals = jnp.append(npoints_intervals,jnp.sum(points[-1][:,0]))
 
-        print(time.time() - tinit)
         npoints_block = npoints_block.at[b_break].set(jnp.sum(npoints_intervals[block == b_break]))
         npoints_block = jnp.append(npoints_block,jnp.sum(npoints_intervals[block == jnp.max(block)]))
     return block,intervals,points,npoints_block,npoints_intervals,block_error

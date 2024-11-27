@@ -21,7 +21,7 @@ def sdesc_BIPL(epochs,train,val,test = None,sample = 10,key = 0,unique = False,t
     tab_val = dt.get_ftable(val,unique)
     nval = val.shape[0]
     if test is not None:
-        tab_test = dt.get_ftable(test)
+        tab_test = dt.get_ftable(test,unique)
 
     #Gather frequency tables in one array
     print('- Creating arrays')
@@ -101,7 +101,6 @@ def sdesc_BIPL(epochs,train,val,test = None,sample = 10,key = 0,unique = False,t
             kn = jnp.array(kn)
             kn = kn[error_epoch == jnp.min(error_epoch)][0]
             move = move[jnp.where(error_epoch == jnp.min(error_epoch))[0][0]]
-            print(move)
             if move == 'break':
                 b_break = jax.random.choice(jax.random.PRNGKey(key[kn,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,),p = npoints_block/jnp.sum(npoints_block))
                 kn = kn + 1
