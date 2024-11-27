@@ -122,9 +122,10 @@ def sample_neighbor(b_break,intervals,block,points,npoints_block,npoints_interva
     #Compute interval cover of complement
     where_fill = jnp.where((new_interval != -1.0)*(break_interval == -1.0))[1]
     where_fill = jax.random.permutation(jax.random.PRNGKey(key[3,0]), where_fill)
-    tinit = time.time()
+    wf_size = where_fill.shape[0]
+    where_fill = jnp.append(jnp.zeros((new_interval.shape[1] - wf_size)),where_fill).astype(jnp.int32)
     cover_intervals = cover_break_interval(new_interval,where_fill)
-    time.time() - tinit
+    cover_intervals = jnp.append(cover_intervals[0,:],cover_intervals[-wf_size:,:],0)
 
     #Divide into two blocks
     division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[4,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0]-2,),replace = True))

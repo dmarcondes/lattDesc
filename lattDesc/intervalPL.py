@@ -101,6 +101,7 @@ def sdesc_BIPL(epochs,train,val,test = None,sample = 10,key = 0,unique = False):
             kn = jnp.array(kn)
             kn = kn[error_epoch == jnp.min(error_epoch)][0]
             move = move[jnp.where(error_epoch == jnp.min(error_epoch))[0][0]]
+            print(move)
             if move == 'break':
                 b_break = jax.random.choice(jax.random.PRNGKey(key[kn,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,),p = npoints_block/jnp.sum(npoints_block))
                 kn = kn + 1
