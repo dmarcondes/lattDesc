@@ -73,7 +73,6 @@ def get_fpoint(x,data):
     """
     zero = (data == jnp.append(x,0)).all(-1).sum()
     one = (data == jnp.append(x,1)).all(-1).sum()
-    total = zero + one
     return jnp.append(zero,one)
 
 #Get frequence table
@@ -101,7 +100,8 @@ def get_ftable(data,unique):
     #Get dimension
     if not unique:
         domain = jnp.unique(data[:,:-1],axis = 0)
+        f = jax.vmap(lambda x: get_fpoint(x,data))(domain)
     else:
         domain = data[:,:-1]
-    f = jax.vmap(lambda x: get_fpoint(x,data))(domain)
+        f = jnp.append(jnp.where(data[:,-1] == 1,0,1).reshape((data.shape[0],1)),jnp.where(data[:,-1] == 1,1,0).reshape((data.shape[0],1)),1)
     return jnp.append(domain,f,1)

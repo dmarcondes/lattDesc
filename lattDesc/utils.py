@@ -84,6 +84,16 @@ def test_limit_interval(interval,x):
     x_min = jnp.where(interval < 0,x,1)
     return jnp.max(x_max) == jnp.min(x_min)
 
+#Get limits of interval
+@jax.jit
+def get_limits_interval(interval,data):
+    return jax.vmap(lambda x: test_limit_interval(interval,x))(data)
+
+#Get elements that are limit of some interval
+@jax.jit
+def get_limits_some_interval(intervals,data):
+    return jnp.sum(jax.vmap(lambda interval: get_limits_interval(interval,data))(intervals),0) > 0
+
 #Get elements in interval
 @jax.jit
 def get_elements_interval(interval,data):
@@ -171,6 +181,7 @@ def error_block_partition(tab_train,tab_val,nval,key):
     return jnp.sum(err)/nval
 
 #Get error partition
+@jax.jit
 def get_error_partition(tab_train,tab_val,intervals,block,nval,key):
     error = 0
     for i in range(jnp.max(block) + 1):
@@ -198,7 +209,6 @@ def cover_break_interval(new_interval,where_fill):
 @jax.jit
 def sample_sup(new_interval,break_interval):
     return jnp.where((break_interval == -1.0)*(new_interval == 1.0),-1.0,new_interval)
-    return new_interval
 
 #Get interval as inf
 @jax.jit
@@ -221,6 +231,19 @@ def sample_interval(b_break,intervals,block,domain,key):
     new_interval = jnp.where(inf_sup == 1,new_interval_sup,new_interval_inf)
     return new_interval,break_interval,index_interval
 
+#Sample interval
+def get_break_interval(point_break,intervals,key):
+    #Sample an interval in this block to break on
+    index_interval = jnp.where(jax.vmap(lambda interval: test_interval(interval,point_break[:,0:-2]))(intervals))[0]
+    break_interval = intervals[index_interval,:]
+    #Break inf or sup
+    new_interval = point_break[:,0:-2]
+    inf_sup = jnp.repeat(jax.random.choice(jax.random.PRNGKey(key), jnp.array([0,1]),shape=(1,)),new_interval.shape[1])
+    new_interval_sup = sample_inf(new_interval,break_interval)
+    new_interval_inf = sample_sup(new_interval,break_interval)
+    new_interval = jnp.where(inf_sup == 1,new_interval_sup,new_interval_inf)
+    return new_interval,break_interval,index_interval
+
 #Update partition
 def update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new):
     intervals = jnp.append(intervals,cover_intervals,0)
@@ -230,7 +253,7 @@ def update_partition(b_break,intervals,cover_intervals,block,index_interval,divi
     where_old = jnp.where(block == b_break)
     block = block.at[where_old].set(division_old)
     block = jnp.append(block,jnp.where(division_new == 0,b_break,max_block + 1))
-    return intervals,block,max_block
+    return intervals,block
 
 #One step reduction
 def reduce(intervals):
@@ -245,24 +268,37 @@ def reduce(intervals):
     return intervals,True
 
 #Sample neighbor
-def sample_neighbor(b_break,intervals,block,nval,tab_train,tab_val,step,key):
+def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key):
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Sample interval
-    new_interval,break_interval,index_interval = sample_interval(b_break,intervals,block,tab_train,key)
+    print('Get break interval')
+    tinit = time.time()
+    new_interval,break_interval,index_interval = get_break_interval(point_break,intervals,key[0,0])
+    b_break = block[index_interval]
+    print(time.time() - tinit)
     #Compute interval cover of complement
+    print('Compute interval cover complement')
+    tinit = time.time()
     where_fill = jnp.where((new_interval != -1.0)*(break_interval == -1.0))[1]
-    where_fill = jax.random.permutation(jax.random.PRNGKey(key[3,0]), where_fill)
+    where_fill = jax.random.permutation(jax.random.PRNGKey(key[1,0]), where_fill)
     wf_size = where_fill.shape[0]
     where_fill = jnp.append(jnp.zeros((new_interval.shape[1] - wf_size)),where_fill).astype(jnp.int32)
     cover_intervals = cover_break_interval(new_interval,where_fill)[-(wf_size + 1):,:]
+    print(time.time() - tinit)
     #Divide into two blocks
-    division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[4,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0]-2,),replace = True))
-    division_old = jax.random.choice(jax.random.PRNGKey(key[5,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (jnp.sum(block == b_break)-1,),replace = True)
+    print('Update partition')
+    tinit = time.time()
+    division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0]-2,),replace = True))
+    division_old = jax.random.choice(jax.random.PRNGKey(key[3,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (jnp.sum(block == b_break)-1,),replace = True)
     #Update partition
-    intervals,block,max_block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
+    intervals,block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
+    print(time.time() - tinit)
     #Compute error
-    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[6,0])
+    print('Get error partition')
+    tinit = time.time()
+    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[4,0])
+    print(time.time() - tinit)
     if not step:
         return error
     else:
@@ -286,6 +322,22 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key):
     block = block.at[jnp.where(block > jnp.max(unite))].set(block[jnp.where(block > jnp.max(unite))] - 1)
     #Compute error
     error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[0,0])
+    if not step:
+        return error
+    else:
+        return block,intervals
+
+#Dismenber block
+def dismenber_blocks(b_break,intervals,block,nval,tab_train,tab_val,step,key):
+    #Seed
+    key = jax.random.split(jax.random.PRNGKey(key),10)
+    #Which intervals to dismenber
+    max_block = jnp.max(block) + 1
+    division_new = jnp.append(jnp.append(b_break,max_block),jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.append(b_break,max_block),shape = (jnp.sum(block == b_break)-2,),replace = True))
+    division_new = jax.jax.random.permutation(jax.random.PRNGKey(key[1,0]),division_new)
+    block = block.at[block == b_break].set(division_new)
+    #Compute error
+    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[2,0])
     if not step:
         return error
     else:
