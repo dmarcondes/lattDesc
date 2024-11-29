@@ -40,8 +40,8 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
     best_block = block.copy()
 
     #Objects to trace
-    trace_error = []
-    trace_time = []
+    trace_error = jnp.array([])
+    trace_time = jnp.array([])
 
     #For each epoch
     print('- Starting epochs')
@@ -68,7 +68,7 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                     tab_val_batch = tab_val
                     bnval = nval
                 #Sample neighbors
-                error_batch = []
+                error_batch = jnp.array([])
                 kn = []
                 move = []
                 #Compute probabilities
@@ -81,10 +81,10 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                 k = k + 1
                 print(time.time() - tinit)
                 for n in range(sample):
+                    print('AQUI')
                     #Unite
                     if what_nei[n] == 0:
                         print('Unite')
-                        tinit = time.time()
                         #Which to unite
                         unite = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(2,),replace = False)
                         k = k + 1
@@ -92,10 +92,9 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                         error_nei = ut.unite_blocks(unite,intervals,block,bnval,tab_train_batch,tab_val_batch,step = False,key = key[k,0])
                         k = k + 1
                         #Save error
-                        error_batch = error_batch + [error_nei.tolist()]
+                        error_batch = jnp.append(error_batch,error_nei)
                         kn = kn + [k - 2]
                         move = move + ['unite']
-                        print(time.time() - tinit)
                     elif what_nei[n] == 1:
                         print('Dismenber')
                         tinit = time.time()
@@ -105,8 +104,11 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                         #Compute error
                         error_nei = ut.dismenber_blocks(b_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = False,key = key[k,0])
                         k = k + 1
-                        error_batch = error_batch + [error_nei.tolist()]
+                        print('Dismenber tolist')
+                        tinit = time.time()
+                        error_batch = jnp.append(error_batch,error_nei)
                         kn = kn + [k - 2]
+                        print(time.time() - tinit)
                         move = move + ['dismenber']
                         print(time.time() - tinit)
                     elif what_nei[n] == 2:
@@ -117,9 +119,12 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                         #Compute error
                         error_nei = ut.break_interval(point_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = False,key = key[k,0])
                         k = k + 1
-                        error_batch = error_batch + [error_nei.tolist()]
+                        print('break tolist')
+                        tinit = time.time()
+                        error_batch = jnp.append(error_batch,error_nei)
                         kn = kn + [k - 2]
                         move = move + ['break']
+                        print(time.time() - tinit)
                 #Update partition
                 error_batch = jnp.array(error_batch)
                 kn = jnp.array(kn)
@@ -156,8 +161,8 @@ def sdesc_BIPL(epochs,train,val,batches = 1,batch_val = False,test = None,sample
                 if len(block) != intervals.shape[0]:
                     print('E4')
                     break
-            trace_error = trace_error + [current_error.tolist()]
-            trace_time = trace_time + [time.time() - tinit]
+            trace_error = jnp.append(trace_error,current_error)
+            trace_time = jnp.append(trace_time,jnp.array([time.time() - tinit]))
             bar()
     test_error = None
     if test is not None:

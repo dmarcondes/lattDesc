@@ -180,13 +180,18 @@ def error_block_partition(tab_train,tab_val,nval,key):
     err = jnp.where(pred,freq_val,0)
     return jnp.sum(err)/nval
 
-#Get error partition
+#Freqeuncy table of block
 @jax.jit
+def ftable_block(intervals,tab):
+    return jax.lax.select(jnp.repeat(get_elements_some_interval(intervals,tab[:,0:-2,]).reshape((tab.shape[0],1)),tab.shape[1],1),tab,jnp.zeros(tab.shape).astype(jnp.uint8))
+
+#Get error partition
 def get_error_partition(tab_train,tab_val,intervals,block,nval,key):
     error = 0
     for i in range(jnp.max(block) + 1):
-        tab_train_block = tab_train[get_elements_some_interval(intervals[block == i,:],tab_train[:,0:-2,]),:]
-        tab_val_block = tab_val[get_elements_some_interval(intervals[block == i,:],tab_val[:,0:-2,]),:]
+        tmp_intervals = jax.lax.select(jnp.repeat((block == i).reshape((intervals.shape[0],1)),intervals.shape[1],1),intervals,2 + jnp.zeros(intervals.shape))
+        tab_train_block = ftable_block(tmp_intervals,tab_train)
+        tab_val_block = ftable_block(tmp_intervals,tab_val)
         error = error + error_block_partition(tab_train_block,tab_val_block,nval,key)
     return error
 
@@ -333,11 +338,17 @@ def dismenber_blocks(b_break,intervals,block,nval,tab_train,tab_val,step,key):
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Which intervals to dismenber
     max_block = jnp.max(block) + 1
+    print('Dismenber part 1')
+    tinit = time.time()
     division_new = jnp.append(jnp.append(b_break,max_block),jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.append(b_break,max_block),shape = (jnp.sum(block == b_break)-2,),replace = True))
     division_new = jax.jax.random.permutation(jax.random.PRNGKey(key[1,0]),division_new)
     block = block.at[block == b_break].set(division_new)
+    print(time.time() - tinit)
     #Compute error
+    print('Dismenber part 2')
+    tinit = time.time()
     error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[2,0])
+    print(time.time() - tinit)
     if not step:
         return error
     else:
