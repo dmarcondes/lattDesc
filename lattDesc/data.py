@@ -104,4 +104,4 @@ def get_ftable(data,unique):
     else:
         domain = data[:,:-1]
         f = jnp.append(jnp.where(data[:,-1] == 1,0,1).reshape((data.shape[0],1)),jnp.where(data[:,-1] == 1,1,0).reshape((data.shape[0],1)),1)
-    return jnp.append(domain,f,1)
+    return jnp.append(domain,f,1).astype(data.dtype)

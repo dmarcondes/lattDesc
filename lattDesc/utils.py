@@ -14,11 +14,11 @@ def test_interval(interval,x):
 
     Parameters
     ----------
-    interval : jax numpy array
+    interval : jax.numpy.array
 
         Interval
 
-    x : jax numpy array
+    x : jax.numpy.array
 
         Element
 
@@ -32,7 +32,7 @@ def test_interval(interval,x):
     return jnp.sum(jnp.where(fixed == 1,x != interval,False)) == 0
 
 #Test if element not in interval
-jax.jit
+@jax.jit
 def test_not_interval(interval,x):
     """
     Test if element is not in interval
@@ -40,11 +40,11 @@ def test_not_interval(interval,x):
 
     Parameters
     ----------
-    interval : jax numpy array
+    interval : jax.numpy.array
 
         Interval
 
-    x : jax numpy array
+    x : jax.numpy.array
 
         Element
 
@@ -66,11 +66,11 @@ def test_limit_interval(interval,x):
 
     Parameters
     ----------
-    interval : jax numpy array
+    interval : jax.numpy.array
 
         Interval
 
-    x : jax numpy array
+    x : jax.numpy.array
 
         Element
 
@@ -87,34 +87,74 @@ def test_limit_interval(interval,x):
 #Get limits of interval
 @jax.jit
 def get_limits_interval(interval,data):
+    """
+    Flag the points in the data that are limits of the interval
+    -------
+
+    Parameters
+    ----------
+    interval : jax.numpy.array
+
+        Interval
+
+    data : jax.numpy.array
+
+        Data
+
+    Returns
+    -------
+
+    jax.numpy.array of logical
+
+    """
     return jax.vmap(lambda x: test_limit_interval(interval,x))(data)
 
 #Get elements that are limit of some interval
 @jax.jit
 def get_limits_some_interval(intervals,data):
+    """
+    Flag the points in the data that are limits of some interval in a array
+    -------
+
+    Parameters
+    ----------
+    intervals : jax.numpy.array
+
+        Array of intervals
+
+    data : jax.numpy.array
+
+        Data
+
+    Returns
+    -------
+
+    jax.numpy.array of logical
+
+    """
     return jnp.sum(jax.vmap(lambda interval: get_limits_interval(interval,data))(intervals),0) > 0
 
 #Get elements in interval
 @jax.jit
 def get_elements_interval(interval,data):
     """
-    Flag the elements in dataset that are in a interval
+    Flag the elements in dataset that are in an interval
     -------
 
     Parameters
     ----------
-    interval : jax numpy array
+    interval : jax.numpy.array
 
         Interval
 
-    data : jax numpy array
+    data : jax.numpy.array
 
         Dataset
 
     Returns
     -------
 
-    jax numpy array of logical
+    jax.numpy.array of logical
 
     """
     return jax.vmap(lambda x: test_interval(interval,x))(data)
@@ -123,23 +163,23 @@ def get_elements_interval(interval,data):
 @jax.jit
 def get_elements_some_interval(intervals,data):
     """
-    Flag the elements in dataset that are in some interval in a set
+    Flag the elements in dataset that are in some interval in an array
     -------
 
     Parameters
     ----------
-    intervals : jax numpy array
+    intervals : jax.numpy.array
 
-        A set of intervals
+        Array of intervals
 
-    data : jax numpy array
+    data : jax.numpy.array
 
         Dataset
 
     Returns
     -------
 
-    jax numpy array of logical
+    jax.numpy.array of logical
 
     """
     return jnp.sum(jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals),0) > 0
@@ -153,9 +193,13 @@ def error_block_partition(tab_train,tab_val,nval,key):
 
     Parameters
     ----------
-    tab : jax numpy array
+    tab_train : jax.numpy.array
 
-        Sample points that are in the block in the format (prob_sample,points,tab_train,tab_val)
+        Frequency table of training data. Each row refers to an input point and the last two columns refer to label frequencies
+
+    tab_val : jax.numpy.array
+
+        Frequency table of validation data. Each row refers to an input point and the last two columns refer to label frequencies
 
     nval : int
 
@@ -180,16 +224,97 @@ def error_block_partition(tab_train,tab_val,nval,key):
     err = jnp.where(pred,freq_val,0)
     return jnp.sum(err)/nval
 
-#Freqeuncy table of block
+#Frequency table of block
 @jax.jit
 def ftable_block(intervals,tab):
-    return jax.lax.select(jnp.repeat(get_elements_some_interval(intervals,tab[:,0:-2,]).reshape((tab.shape[0],1)),tab.shape[1],1),tab,jnp.zeros(tab.shape).astype(jnp.uint8))
+    """
+    Frequency table of a block
+    -------
 
-#Get error partition
+    Parameters
+    ----------
+    intervals : jax.numpy.array
+
+        Array of intervals that define the block
+
+    tab : jax.numpy.array
+
+        Frequency table. Each row refers to an input point and the last two columns refer to label frequencies
+
+    Returns
+    -------
+
+    jax.numpy.array
+
+    """
+    return jax.lax.select(jnp.repeat(get_elements_some_interval(intervals,tab[:,0:-2,]).reshape((tab.shape[0],1)),tab.shape[1],1),tab,jnp.zeros(tab.shape).astype(tab.dtype))
+
+#Select intervals
+@jax.jit
+def select_intervals(cond,intervals,value = 2):
+    """
+    Keep as valid only the intervals that satisfies the condition by substituting invalid intervals by a value
+    -------
+
+    Parameters
+    ----------
+    cond : jax.numpy.array
+
+        Array of logical indicating intervals that satisfy a condition
+
+    intervals : jax.numpy.array
+
+        Array of intervals that define the block
+
+    Returns
+    -------
+
+    jax.numpy.array
+
+    """
+    return jax.lax.select(jnp.repeat(cond.reshape((intervals.shape[0],1)),intervals.shape[1],1),intervals,value + jnp.zeros(intervals.shape))
+
+#Get error partition (it is better to not jit)
 def get_error_partition(tab_train,tab_val,intervals,block,nval,key):
+    """
+    Get error of partition
+    -------
+
+    Parameters
+    ----------
+    tab_train : jax.numpy.array
+
+        Frequency table of training data. Each row refers to an input point and the last two columns refer to label frequencies
+
+    tab_val : jax.numpy.array
+
+        Frequency table of validation data. Each row refers to an input point and the last two columns refer to label frequencies
+
+    intervals : jax.numpy.array
+
+        Array of intervals that define the partition.
+
+    block : jax.numpy.array
+
+        Array with the block of each interval.
+
+    nval : int
+
+        Size of validation sample
+
+    key : int
+
+        Key for random classification in the presence of ties
+
+    Returns
+    -------
+
+    float
+
+    """
     error = 0
     for i in range(jnp.max(block) + 1):
-        tmp_intervals = jax.lax.select(jnp.repeat((block == i).reshape((intervals.shape[0],1)),intervals.shape[1],1),intervals,2 + jnp.zeros(intervals.shape))
+        tmp_intervals = select_intervals(block == i,intervals)
         tab_train_block = ftable_block(tmp_intervals,tab_train)
         tab_val_block = ftable_block(tmp_intervals,tab_val)
         error = error + error_block_partition(tab_train_block,tab_val_block,nval,key)
@@ -198,6 +323,26 @@ def get_error_partition(tab_train,tab_val,intervals,block,nval,key):
 #Break interval at new interval
 @jax.jit
 def cover_break_interval(new_interval,where_fill):
+    """
+    Compute a cover of [A,B]/[A,X] or [A,B]/[X,B] by intervals.
+    -------
+
+    Parameters
+    ----------
+    new_interval : jax.numpy.array
+
+        The interval [A,X] or [X,B].
+
+    where_fill : jax.numpy.array
+
+        Pre-computed random ordering of the free positions of [A,B] that are not free in new_interval.
+
+    Returns
+    -------
+
+    jax.numpy.array of intervals
+
+    """
     cover_intervals = None
     for i in range(len(where_fill)):
         tmp = new_interval
@@ -212,51 +357,146 @@ def cover_break_interval(new_interval,where_fill):
 
 #Get interval as sup
 @jax.jit
-def sample_sup(new_interval,break_interval):
-    return jnp.where((break_interval == -1.0)*(new_interval == 1.0),-1.0,new_interval)
+def sample_sup(point,interval):
+    """
+    Get interval contained in an interval that ends in a point in it
+    -------
+
+    Parameters
+    ----------
+    point : jax.numpy.array
+
+        Point.
+
+    interval : jax.numpy.array
+
+        Interval.
+
+    Returns
+    -------
+
+    jax.numpy.array
+
+    """
+    return jnp.where((interval == -1.0)*(point == 1.0),-1.0,point)
 
 #Get interval as inf
 @jax.jit
-def sample_inf(new_interval,break_interval):
-    return jnp.where((break_interval == -1.0)*(new_interval == 0.0),-1.0,new_interval)
+def sample_inf(point,interval):
+    """
+    Get interval contained in an interval that starts in a point in it
+    -------
 
-#Sample interval
-def sample_interval(b_break,intervals,block,domain,key):
-    #Sample an interval in this block to break on
-    index_interval = jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.array(list(range(intervals.shape[0]))),shape=(1,),p = jnp.where(block == b_break,1,0))
-    break_interval = intervals[index_interval,:]
-    #Sample a point in this interval to break on
-    points = domain[get_elements_interval(break_interval,domain[:,0:-2]),:]
-    point = jax.random.choice(jax.random.PRNGKey(key[1,0]), jnp.array(list(range(points.shape[0]))),shape=(1,))#,p = points[index_interval[0]][:,0])
-    #Break inf or sup
-    new_interval = points[point,0:-2]
-    inf_sup = jnp.repeat(jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape=(1,)),new_interval.shape[1])
-    new_interval_sup = sample_inf(new_interval,break_interval)
-    new_interval_inf = sample_sup(new_interval,break_interval)
-    new_interval = jnp.where(inf_sup == 1,new_interval_sup,new_interval_inf)
-    return new_interval,break_interval,index_interval
+    Parameters
+    ----------
+    point : jax.numpy.array
 
-#Sample interval
-def get_break_interval(point_break,intervals,key):
+        Point.
+
+    interval : jax.numpy.array
+
+        Interval.
+
+    Returns
+    -------
+
+    jax.numpy.array
+
+    """
+    return jnp.where((interval == -1.0)*(point == 0.0),-1.0,point)
+
+#Flag intervalk that contaisn point
+@jax.jit
+def get_interval(point,intervals):
+    return jax.vmap(lambda interval: test_interval(interval,point))(intervals)
+
+#Sample interval (it is ok not to jit)
+@jax.jit
+def get_break_interval(point,intervals,which_interval,key):
+    """
+    Get random interval to break at a given point
+    -------
+
+    Parameters
+    ----------
+    point : jax.numpy.array
+
+        Point.
+
+    interval : jax.numpy.array
+
+        Intervals.
+
+    key : int
+
+        Seed for sampling.
+
+    Returns
+    -------
+
+    jax.numpy.array
+
+    """
     #Sample an interval in this block to break on
-    index_interval = jnp.where(jax.vmap(lambda interval: test_interval(interval,point_break[:,0:-2]))(intervals))[0]
-    break_interval = intervals[index_interval,:]
+    break_interval = jnp.sum(select_intervals(which_interval,intervals,0),0)
     #Break inf or sup
-    new_interval = point_break[:,0:-2]
+    new_interval = point
     inf_sup = jnp.repeat(jax.random.choice(jax.random.PRNGKey(key), jnp.array([0,1]),shape=(1,)),new_interval.shape[1])
     new_interval_sup = sample_inf(new_interval,break_interval)
     new_interval_inf = sample_sup(new_interval,break_interval)
     new_interval = jnp.where(inf_sup == 1,new_interval_sup,new_interval_inf)
-    return new_interval,break_interval,index_interval
+    return new_interval,break_interval
+
+#Jit delete
+@jax.jit
+def jit_delete(x,i):
+    idx = jnp.arange(x.shape[0])
+    idx = jnp.where(idx >= i, idx + 1, idx)[:-1]
+    return x[idx]
+
+jax.jit
+def jit_delete_row(x,i):
+    idx = jnp.arange(x.shape[0])
+    idx = jnp.where(idx >= i, idx + 1, idx)[:-1]
+    return x[idx,:]
 
 #Update partition
+@jax.jit
 def update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new):
+    """
+    Update partition after breaking interval
+    -------
+
+    Parameters
+    ----------
+    b_break : int
+
+        Which block to break
+
+    intervals : jax.numpy.array
+
+        Intervals of partition
+
+    cover_intervals : jax.numpy.array
+
+        Intervals.
+
+    key : int
+
+        Seed for sampling.
+
+    Returns
+    -------
+
+    jax.numpy.array
+
+    """
+    tinit = time.time()
     intervals = jnp.append(intervals,cover_intervals,0)
-    intervals = jnp.delete(intervals,index_interval,0)
+    intervals = jit_delete_row(intervals,index_interval)#jnp.delete(intervals,index_interval,0)
     max_block = jnp.max(block)
-    block = jnp.delete(block,index_interval)
-    where_old = jnp.where(block == b_break)
-    block = block.at[where_old].set(division_old)
+    block = jit_delete(block,index_interval) #jnp.delete(block,index_interval)
+    block = jnp.where(block == b_break,division_old,block)
     block = jnp.append(block,jnp.where(division_new == 0,b_break,max_block + 1))
     return intervals,block
 
@@ -276,38 +516,33 @@ def reduce(intervals):
 def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key):
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
+    tinit = time.time()
     #Sample interval
-    print('Get break interval')
-    tinit = time.time()
-    new_interval,break_interval,index_interval = get_break_interval(point_break,intervals,key[0,0])
+    which_interval = get_interval(point_break[:,:-2],intervals)
+    new_interval,break_interval = get_break_interval(point_break[:,:-2],intervals,which_interval,key[0,0])
+    index_interval = jnp.where(which_interval)[0]
     b_break = block[index_interval]
-    print(time.time() - tinit)
     #Compute interval cover of complement
-    print('Compute interval cover complement')
-    tinit = time.time()
-    where_fill = jnp.where((new_interval != -1.0)*(break_interval == -1.0))[1]
+    where_fill = jnp.arange(new_interval.shape[1])[((new_interval != -1.0)*(break_interval == -1.0))[0,:]]
     where_fill = jax.random.permutation(jax.random.PRNGKey(key[1,0]), where_fill)
     wf_size = where_fill.shape[0]
     where_fill = jnp.append(jnp.zeros((new_interval.shape[1] - wf_size)),where_fill).astype(jnp.int32)
     cover_intervals = cover_break_interval(new_interval,where_fill)[-(wf_size + 1):,:]
-    print(time.time() - tinit)
     #Divide into two blocks
-    print('Update partition')
-    tinit = time.time()
     division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0]-2,),replace = True))
-    division_old = jax.random.choice(jax.random.PRNGKey(key[3,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (jnp.sum(block == b_break)-1,),replace = True)
+    division_old = jax.random.choice(jax.random.PRNGKey(key[3,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (jnp.sum(block == b_break) - 1,),replace = True)
+    where_div = jnp.where(block == b_break)[0]
+    where_div = where_div[where_div != index_interval]
+    division_old = (-1 + jnp.zeros(block.shape).astype(block.dtype)).at[where_div].set(division_old)
+    division_old = jit_delete(division_old,index_interval)
     #Update partition
     intervals,block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
-    print(time.time() - tinit)
     #Compute error
-    print('Get error partition')
-    tinit = time.time()
     error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[4,0])
-    print(time.time() - tinit)
     if not step:
         return error
     else:
-        return block,intervals
+        return {'block': block,'intervals': intervals,'error': error}
 
 #Unite two blocks
 def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key):
@@ -330,7 +565,7 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key):
     if not step:
         return error
     else:
-        return block,intervals
+        return {'block': block,'intervals': intervals,'error': error}
 
 #Dismenber block
 def dismenber_blocks(b_break,intervals,block,nval,tab_train,tab_val,step,key):
@@ -338,18 +573,12 @@ def dismenber_blocks(b_break,intervals,block,nval,tab_train,tab_val,step,key):
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Which intervals to dismenber
     max_block = jnp.max(block) + 1
-    print('Dismenber part 1')
-    tinit = time.time()
     division_new = jnp.append(jnp.append(b_break,max_block),jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.append(b_break,max_block),shape = (jnp.sum(block == b_break)-2,),replace = True))
     division_new = jax.jax.random.permutation(jax.random.PRNGKey(key[1,0]),division_new)
     block = block.at[block == b_break].set(division_new)
-    print(time.time() - tinit)
     #Compute error
-    print('Dismenber part 2')
-    tinit = time.time()
     error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[2,0])
-    print(time.time() - tinit)
     if not step:
         return error
     else:
-        return block,intervals
+        return {'block': block,'intervals': intervals,'error': error}
