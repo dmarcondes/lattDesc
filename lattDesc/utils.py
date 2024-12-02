@@ -6,7 +6,7 @@ import time
 from itertools import compress
 
 #Test if element in interval
-@jax.jit
+#@jax.jit
 def test_interval(interval,x):
     """
     Test if element is in interval
@@ -32,7 +32,7 @@ def test_interval(interval,x):
     return jnp.sum(jnp.where(fixed == 1,x != interval,False)) == 0
 
 #Test if element not in interval
-@jax.jit
+#@jax.jit
 def test_not_interval(interval,x):
     """
     Test if element is not in interval
@@ -58,7 +58,7 @@ def test_not_interval(interval,x):
     return jnp.sum(jnp.where(fixed == 1,x != interval,False)) != 0
 
 #Teste if element is limit of interval (we know it is in interval)
-@jax.jit
+#@jax.jit
 def test_limit_interval(interval,x):
     """
     Test if element is the limit of an interval
@@ -85,7 +85,7 @@ def test_limit_interval(interval,x):
     return jnp.max(x_max) == jnp.min(x_min)
 
 #Get limits of interval
-@jax.jit
+#@jax.jit
 def get_limits_interval(interval,data):
     """
     Flag the points in the data that are limits of the interval
@@ -110,7 +110,7 @@ def get_limits_interval(interval,data):
     return jax.vmap(lambda x: test_limit_interval(interval,x))(data)
 
 #Get elements that are limit of some interval
-@jax.jit
+#@jax.jit
 def get_limits_some_interval(intervals,data):
     """
     Flag the points in the data that are limits of some interval in a array
@@ -135,7 +135,7 @@ def get_limits_some_interval(intervals,data):
     return jnp.sum(jax.vmap(lambda interval: get_limits_interval(interval,data))(intervals),0) > 0
 
 #Get elements in interval
-@jax.jit
+#@jax.jit
 def get_elements_interval(interval,data):
     """
     Flag the elements in dataset that are in an interval
@@ -160,7 +160,7 @@ def get_elements_interval(interval,data):
     return jax.vmap(lambda x: test_interval(interval,x))(data)
 
 #Get elements in some interval
-@jax.jit
+#@jax.jit
 def get_elements_some_interval(intervals,data):
     """
     Flag the elements in dataset that are in some interval in an array
@@ -185,7 +185,7 @@ def get_elements_some_interval(intervals,data):
     return jnp.sum(jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals),0) > 0
 
 #Compute error of a block
-@jax.jit
+##@jax.jit
 def error_block_partition(tab_train,tab_val,nval,key):
     """
     Compute the error a block
@@ -225,7 +225,7 @@ def error_block_partition(tab_train,tab_val,nval,key):
     return jnp.sum(err)/nval
 
 #Frequency table of block
-@jax.jit
+#@jax.jit
 def ftable_block(intervals,tab):
     """
     Frequency table of a block
@@ -250,7 +250,7 @@ def ftable_block(intervals,tab):
     return jax.lax.select(jnp.repeat(get_elements_some_interval(intervals,tab[:,0:-2,]).reshape((tab.shape[0],1)),tab.shape[1],1),tab,jnp.zeros(tab.shape).astype(tab.dtype))
 
 #Select intervals
-@jax.jit
+#@jax.jit
 def select_intervals(cond,intervals,value = 2):
     """
     Keep as valid only the intervals that satisfies the condition by substituting invalid intervals by a value
@@ -321,7 +321,7 @@ def get_error_partition(tab_train,tab_val,intervals,block,nval,key):
     return error
 
 #Break interval at new interval
-@jax.jit
+##@jax.jit
 def cover_break_interval(new_interval,where_fill):
     """
     Compute a cover of [A,B]/[A,X] or [A,B]/[X,B] by intervals.
@@ -356,7 +356,7 @@ def cover_break_interval(new_interval,where_fill):
     return cover_intervals
 
 #Get interval as sup
-@jax.jit
+#@jax.jit
 def sample_sup(point,interval):
     """
     Get interval contained in an interval that ends in a point in it
@@ -381,7 +381,7 @@ def sample_sup(point,interval):
     return jnp.where((interval == -1.0)*(point == 1.0),-1.0,point)
 
 #Get interval as inf
-@jax.jit
+#@jax.jit
 def sample_inf(point,interval):
     """
     Get interval contained in an interval that starts in a point in it
@@ -406,12 +406,12 @@ def sample_inf(point,interval):
     return jnp.where((interval == -1.0)*(point == 0.0),-1.0,point)
 
 #Flag intervalk that contaisn point
-@jax.jit
+#@jax.jit
 def get_interval(point,intervals):
     return jax.vmap(lambda interval: test_interval(interval,point))(intervals)
 
 #Sample interval (it is ok not to jit)
-@jax.jit
+##@jax.jit
 def get_break_interval(point,intervals,which_interval,key):
     """
     Get random interval to break at a given point
@@ -448,7 +448,7 @@ def get_break_interval(point,intervals,which_interval,key):
     return new_interval,break_interval
 
 #Jit delete
-@jax.jit
+#@jax.jit
 def jit_delete(x,i):
     idx = jnp.arange(x.shape[0])
     idx = jnp.where(idx >= i, idx + 1, idx)[:-1]
@@ -461,7 +461,7 @@ def jit_delete_row(x,i):
     return x[idx,:]
 
 #Update partition
-@jax.jit
+##@jax.jit
 def update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new):
     """
     Update partition after breaking interval

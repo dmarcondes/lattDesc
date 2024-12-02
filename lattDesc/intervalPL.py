@@ -118,19 +118,15 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 #Sample neighbors
                 error_batch = jnp.array([])
                 #Compute probabilities
-                tinit = time.time()
                 small = jnp.array(math.comb(jnp.max(block) + 1,2))
                 dismenber = jnp.power(jnp.bincount(block) - 1,2) - 1
                 breakInt = ut.get_limits_some_interval(intervals,tab_train[:,0:-2])
                 what_nei = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array([0,1,2]),shape=(sample,),p = jnp.append(jnp.append(small,jnp.sum(dismenber)),jnp.sum(1 - breakInt)))
                 k = k + 1
-                tinit_epoch = time.time()
                 store_nei = list()
                 #Sample neighbors
                 for n in range(sample):
                     if what_nei[n] == 0:
-                        print('Unite')
-                        tinit = time.time()
                         #Unite
                         #Which to unite
                         unite = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(2,),replace = False)
@@ -140,10 +136,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1
                         #Save error
                         error_batch = jnp.append(error_batch,store_nei[-1]['error'])
-                        print(time.time() - tinit)
                     elif what_nei[n] == 1:
-                        print('Dismenber')
-                        tinit = time.time()
                         #Dismenber
                         #Which block to dismenber
                         b_dis = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,),p = dismenber)
@@ -152,10 +145,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         store_nei.append(ut.dismenber_blocks(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0]))
                         k = k + 1
                         error_batch = jnp.append(error_batch,store_nei[-1]['error'])
-                        print(time.time() - tinit)
                     elif what_nei[n] == 2:
-                        print('Break')
-                        tinit = time.time()
                         #Break
                         #On which point to break
                         point_break = tab_train[jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(tab_train.shape[0]))),shape=(1,),p = 1 - breakInt),:]
@@ -164,14 +154,12 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         store_nei.append(ut.break_interval(point_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0]))
                         k = k + 1
                         error_batch = jnp.append(error_batch,store_nei[-1]['error'])
-                        print(time.time() - tinit)
                 #Update partition
                 error_batch = jnp.array(error_batch)
                 which_nei = jnp.where(error_batch == jnp.min(error_batch))[0][0]
                 block = store_nei[which_nei]['block']
                 intervals = store_nei[which_nei]['intervals']
                 del store_nei
-            #print(time.time() - tinit_epoch)
             #Get error current partition
             current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0])
             k = k + 1
@@ -180,7 +168,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 best_error = current_error
                 best_intervals = intervals.copy()
                 best_block = block.copy()
-                print('Error: ' + str(round(best_error,3)))
+                #print('Error: ' + str(round(best_error,3)))
             if test_phase:
                 if tab_train[ut.get_elements_some_interval(intervals,tab_train[:,0:-2,]),:].shape[0] != tab_train.shape[0]:
                     print('E1')
