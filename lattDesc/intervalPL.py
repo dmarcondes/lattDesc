@@ -168,7 +168,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 best_error = current_error
                 best_intervals = intervals.copy()
                 best_block = block.copy()
-                #print('Error: ' + str(round(best_error,3)))
+                print('Error: ' + str(round(best_error,3)))
             if test_phase:
                 if tab_train[ut.get_elements_some_interval(intervals,tab_train[:,0:-2,]),:].shape[0] != tab_train.shape[0]:
                     print('E1')
