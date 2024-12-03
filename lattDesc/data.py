@@ -4,6 +4,12 @@ jax.config.update('jax_platform_name', 'cpu')
 from jax import numpy as jnp
 import pandas as pd
 from itertools import product
+from contextlib import redirect_stdout
+import plotly.express as px
+import plotly
+from lattDesc import utils as ut
+import math
+import os
 
 #Generate binary synthetic data
 def synthetic_binary_data(n,d,key):
@@ -82,7 +88,7 @@ def get_ftable(data,unique,num_classes = 2):
     -------
     Parameters
     ----------
-    data : jax numpy array
+    data : jax.numpy.array
 
         Data array
 
@@ -106,3 +112,101 @@ def get_ftable(data,unique,num_classes = 2):
     #Compute frequencies
     f = jax.vmap(lambda x: get_fpoint(x,data,num_classes))(domain)
     return jnp.append(domain,f,1).astype(data.dtype)
+
+#Generate picture of paritiion
+def picture_partition(intervals,block,title = 'abc',filename = 'image'):
+    """
+    Generate image of Boolean lattice colored by the partition
+    -------
+    Parameters
+    ----------
+    intervals : jax.numpy.array
+
+        Intervals of partition
+
+    block : jax.numpy.array
+
+        Block of each interval
+
+    title : str
+
+        Title of image
+
+    filename : str
+
+        Name of image withou extension
+    """
+    #Generate lattice
+    d = intervals.shape[1]
+    lattice = jnp.array([i for i in product(range(2),repeat = d)])
+    lattice = lattice[jnp.sum(lattice,1).argsort()]
+    #Get block of each point
+    block = jnp.sum(jax.vmap(lambda point: jnp.where(ut.get_interval(point,intervals),block,0))(lattice),1)
+    jump = 0.75*math.comb(d,round(d/2))/d
+    #Create .tex file
+    with open(filename + '.tex', 'w') as f:
+        with redirect_stdout(f):
+            print('\\documentclass[crop,tikz]{standalone}\n')
+            print('\\begin{document}')
+            print('\\begin{tikzpicture}[scale=1, transform shape]\n')
+            #Create node type for each block
+            ncolors = jnp.max(block) + 1
+            if ncolors != 1:
+                colors = px.colors.n_colors('rgb(0, 0, 255)', 'rgb(255, 0, 0)', ncolors, colortype = 'rgb')
+            else:
+                colors = ['rgb(0, 0, 255)']
+            colors = plotly.colors.convert_colors_to_same_type(colors,colortype = 'tuple')[0]
+            for i in range(jnp.max(block) + 1):
+                red = int(round(colors[i][0]*255))
+                green = int(round(colors[i][1]*255))
+                blue = int(round(colors[i][2]*255))
+                print('\\tikzstyle{b' + str(i) + '} = [rectangle,opacity = .5,draw=black, rounded corners,fill = {rgb:red,' + str(red) + ';green,' + str(green) + ';blue,' + str(blue) + '}]')
+            #Title
+            print('\\node[above] at (0,0.5) {' + title + '};')
+            #Print points
+            print('\n')
+            vars = 0
+            counter = 0
+            save_id = []
+            for i in range(lattice.shape[0]):
+                st = '\\node[b' + str(block[i]) + '] at ('
+                tmp_vars = jnp.sum(lattice[i])
+                if tmp_vars != vars:
+                    vars = tmp_vars
+                    counter = -math.comb(d,vars) + 1
+                id = str(lattice[i,:])
+                id = id.replace('[','')
+                id = id.replace(']','')
+                id = id.replace(' ','')
+                st = st + str(counter) + ',' + str(-jump*vars) + ') (n' + id + ') {\\tiny ' + id + '};'
+                counter = counter + 2
+                print(st)
+            #Lines
+            print('\n')
+            print('\\begin{scope}')
+            for i in range(lattice.shape[0]):
+                id1 = str(lattice[i,:])
+                id1 = id1.replace('[','')
+                id1 = id1.replace(']','')
+                id1 = id1.replace(' ','')
+                interval_i = jnp.where(ut.get_interval(lattice[i,:],intervals))[0]
+                for j in range(d):
+                    if lattice[i,j] == 0:
+                        tmp = lattice.at[i,j].set(1 - lattice[i,j])
+                        id2 = str(tmp[i,:])
+                        id2 = id2.replace('[','')
+                        id2 = id2.replace(']','')
+                        id2 = id2.replace(' ','')
+                        interval_tmp = jnp.where(ut.get_interval(tmp[i,:],intervals))[0]
+                        if interval_tmp == interval_i:
+                            red = int(round(colors[block[i]][0]*255))
+                            green = int(round(colors[block[i]][1]*255))
+                            blue = int(round(colors[block[i]][2]*255))
+                            print('\\draw[-,color = {rgb:red,' + str(red) + ';green,' + str(green) + ';blue,' + str(blue) + '}] (n' + id1 + ') -- (n' + id2 + ');')
+                        else:
+                            print('\\draw[-] (n' + id1 + ') -- (n' + id2 + ');')
+            print('\\end{scope}')
+            print('\\end{tikzpicture}')
+            print('\\end{document}')
+    os.system('pdflatex ' + filename + '.tex > /dev/null')
+    os.system('rm *.tex *.log *.aux > /dev/null')

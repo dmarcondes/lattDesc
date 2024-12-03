@@ -7,9 +7,10 @@ from lattDesc import utils as ut
 import math
 import time
 from alive_progress import alive_bar
+import os
 
 #Stochastic Descent on the Boolean Interval Partition Lattice
-def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None):
+def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
     """
     Stochastic Lattice Descent Algorithm in the Boolean Interval Partition Lattice
     -------
@@ -63,6 +64,18 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
 
         Array with the blocks of the initial intervals. If None then initialize with the unitary partition
 
+    video : logical
+
+        Wheter to generate a video with the algorithm steps
+
+    filename : str
+
+        File name for video
+
+    framerate : int
+
+        Framerate for video
+
     Returns
     -------
     dictionary with the learned 'block','intervals','best_error' and 'test_error', and the trace of the error ('trace_error') and time ('trace_time') over the epochs
@@ -71,6 +84,13 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     #Start seed
     key = jax.random.split(jax.random.PRNGKey(key),10*epochs)
     k = 0
+
+    #If video, create dir to save images
+    if video:
+        os.system('rm -r tmp_' + filename)
+        os.system('mkdir tmp_' + filename)
+        dir = '/tmp_' + filename
+        os.chdir(os.getcwd() + dir)
 
     #Get frequency tables
     print('- Creating frequency tables')
@@ -101,6 +121,10 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     best_error = current_error #Best error_batch
     best_intervals = intervals.copy() #Best intervals
     best_block = block.copy() #Best block
+
+    #If video
+    if video:
+        dt.picture_partition(intervals,block,title = 'Epoch 0 Error = ' + str(round(current_error,2)),filename = filename + '_' + str(0).zfill(5))
 
     #Objects to trace
     trace_error = jnp.array([]) #Trace algorithm time
@@ -158,7 +182,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_blocks(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
+                        store_nei.append(ut.dismenber_block(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
@@ -188,16 +212,87 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 best_error = current_error #Store error
                 best_intervals = intervals.copy() #Store intervals
                 best_block = block.copy() #Store blocks
-                print('Error: ' + str(round(best_error,3))) #Print error
+                print('Time: ' + str(round(time.time() - tinit,2)) + ' Error: ' + str(round(best_error,3))) #Print error
 
             #Trace
             trace_error = jnp.append(trace_error,current_error) #Trace error
             trace_time = jnp.append(trace_time,jnp.array([time.time() - tinit])) #Trace time
+
+            #If video
+            if video:
+                dt.picture_partition(intervals,block,title = 'Epoch ' + str(e) + ' Error = ' + str(round(current_error,2)),filename = filename + '_' + str(e + 1).zfill(5))
             bar() #Update bar
     #Test error
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
         test_error = ut.error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
 
+    #Create video
+    if video:
+        os.system('for f in *.pdf; do convert -density 500 ./"$f" -quality 100 -background white -alpha remove -alpha off ./"${f%.pdf}.png"; done')
+        os.system("ffmpeg -framerate " + str(framerate) + " -i " + filename + "_%5d.png " + filename + ".mp4")
+
     #Return
     return {'block': block,'intervals': intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
+
+#Stochastic ISI algorithm
+def stochasticISI(train,class_break,key,unique = False,num_clasess = 2):
+    key = 0
+    unique = False
+    num_classes = 2
+    class_break = 0
+    #Start seed
+    key = jax.random.split(jax.random.PRNGKey(key),10*train.shape[0])
+    k = 0
+
+    #Parameters
+    d = train.shape[1] - 1
+
+    #Frequency table
+    tab = dt.get_ftable(train,unique,num_classes)
+    tab = jax.random.permutation(jax.random.PRNGKey(key[k,0]),tab,0) #Random permutation
+    k = k + 1
+
+    #Get label of each observed domain point
+    label = jax.vmap(lambda x: jnp.where(x == jnp.max(x),1,0))(tab[:,-num_classes:])
+
+    #Only points without tie
+    tab = tab[jnp.sum(label,1) == 1,:]
+    label = label[jnp.sum(label,1) == 1,:]
+    label = jnp.sum(jax.vmap(lambda x: jnp.where(x == 1,jnp.arange(num_classes),0))(label),1)
+
+    #Initialize interval
+    intervals = -1 + jnp.zeros((1,d)) #Array with intervals
+    block = jnp.array([0]) #Array with block of each interval
+
+    #Probability of each point
+    freq = jax.vmap(lambda interval: ut.frequency_labels_interval(interval,tab[:,:-num_classes],label,num_classes))(intervals)
+    prob = jnp.where(jnp.min(freq,1) > 0,1,0)
+    prob = jnp.sum(jax.vmap(lambda point: jnp.where(ut.get_interval(point,intervals),prob,0))(tab[:,:-num_classes]),1)
+    prob = jnp.where(label != class_break,0,prob)
+    limit = ut.get_limits_some_interval(intervals,tab[:,:-num_classes])
+    prob = jnp.where(limit,0,prob)
+    step = 0
+    with alive_bar() as bar:
+        while(jnp.max(prob) == 1):
+            #Sample point to break
+            point_break = tab[jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(tab.shape[0]))),shape=(1,),p = prob),:]
+            k = k + 1 #Update seed
+            #Update partition
+            new_partition = ut.break_interval(point_break,intervals,block,tab.shape[0],tab,tab,step = True,key = key[k,0],num_classes = num_classes)
+            intervals = new_partition['intervals']
+            block = new_partition['block']
+            print(new_partition['error'])
+            k = k + 1 #Update seed
+            #Update probabilities
+            freq = jax.vmap(lambda interval: ut.frequency_labels_interval(interval,tab[:,:-num_classes],label,num_classes))(intervals)
+            prob = jnp.where(jnp.min(freq,1) > 0,1,0)
+            prob = jnp.sum(jax.vmap(lambda point: jnp.where(ut.get_interval(point,intervals),prob,0))(tab[:,:-num_classes]),1)
+            prob = jnp.where(label != class_break,0,prob)
+            limit = ut.get_limits_some_interval(intervals,tab[:,:-num_classes])
+            prob = jnp.where(limit,0,prob)
+            print(jnp.bincount(prob))
+            step = step + 1
+            bar()
+
+    return intervals,block
