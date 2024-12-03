@@ -1,4 +1,8 @@
 setup.py
+lattDesc/__init__.py
+lattDesc/data.py
+lattDesc/learning.py
+lattDesc/utils.py
 lattDesc.egg-info/PKG-INFO
 lattDesc.egg-info/SOURCES.txt
 lattDesc.egg-info/dependency_links.txt

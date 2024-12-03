@@ -96,7 +96,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
         block = jnp.array([0]) #Array with block of each interval
 
     #Store error
-    current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0],num_classes) #Get error
+    current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,key[k,0],num_classes) #Get error
     k = k + 1 #Update seed
     best_error = current_error #Best error_batch
     best_intervals = intervals.copy() #Best intervals
@@ -158,7 +158,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_blocks(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
+                        store_nei.append(ut.dismenber_block(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
@@ -180,7 +180,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 intervals = store_nei[which_nei]['intervals'] #Update interval
                 del store_nei, error_batch #Delete trace of neighbors
             #Get error current partition at the end of epoch
-            current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0],num_classes)
+            current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,key[k,0],num_classes)
             k = k + 1 #Update seed
 
             #Store current partition as best with it has the least error so far
@@ -197,7 +197,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     #Test error
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
-        test_error = ut.get_error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
+        test_error = ut.error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
 
     #Return
     return {'block': block,'intervals': intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
