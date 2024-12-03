@@ -8,9 +8,8 @@ from itertools import product
 #Generate binary synthetic data
 def synthetic_binary_data(n,d,key):
     """
-    Generate synthetic binary random data.
+    Generate synthetic binary random data
     -------
-
     Parameters
     ----------
     n : int
@@ -23,13 +22,11 @@ def synthetic_binary_data(n,d,key):
 
     key : int
 
-        Key for sampling
+        Seed for sampling
 
     Returns
     -------
-
-    a JAX numpy array
-
+    jax.numpy.array withe genrated data in which the last column constains the labels
     """
     #Generate probability of each point
     key = jax.random.split(jax.random.PRNGKey(key),n+3)
@@ -37,7 +34,7 @@ def synthetic_binary_data(n,d,key):
     prob = prob/jnp.sum(prob)
     #Generate probability of conditioned distribution
     prob_cond = jax.random.choice(jax.random.PRNGKey(key[1,0]), jnp.array([0,1]),shape = (2 ** d,))
-    #Generate inout points
+    #Generate input points
     index = jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array(list(range(2 ** d))), shape=(n,),replace = True,p = prob)
     domain = jnp.array([i for i in product(range(2),repeat = d)])
     x = domain[index,:]
@@ -53,50 +50,45 @@ def synthetic_binary_data(n,d,key):
 @jax.jit
 def get_fpoint(x,data):
     """
-    Get empirical frequencies conditioned on a point
+    Get empirical frequencies conditioned on a point for binary outputs
     -------
-
     Parameters
     ----------
-    x : jax numpy array
+    x : jax.numpy.array
 
-        Vector to conditioned on
+        Point to condition on
 
-    data : jax numpy array
+    data : jax.numpy.array
 
-        Data matrix
+        Data array
 
     Returns
     -------
-
-    a JAX numpy array
-
+    jax.numpy.array with the empirical frequencies
     """
     zero = (data == jnp.append(x,0)).all(-1).sum()
     one = (data == jnp.append(x,1)).all(-1).sum()
     return jnp.append(zero,one)
 
 #Get frequence table
+@jax.jit
 def get_ftable(data,unique):
     """
-    Get empirical frequencies of data matrix
+    Get empirical frequencies of data with binary outputs
     -------
-
     Parameters
     ----------
     data : jax numpy array
 
-        Data matrix
+        Data array
 
     unique : logical
 
-        If data is unique
+        Whether the data is unique, i.e., each input point appears only once in the data
 
     Returns
     -------
-
-    a JAX numpy array
-
+    jax.numpy.array
     """
     #Get dimension
     if not unique:
