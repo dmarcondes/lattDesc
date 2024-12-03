@@ -47,10 +47,9 @@ def synthetic_binary_data(n,d,key):
     return jnp.append(x,y,1)
 
 #Get frequency of a point in the domain
-@jax.jit
-def get_fpoint(x,data):
+def get_fpoint(x,data,num_classes = 2):
     """
-    Get empirical frequencies conditioned on a point for binary outputs
+    Get empirical frequencies conditioned on a point
     -------
     Parameters
     ----------
@@ -62,17 +61,22 @@ def get_fpoint(x,data):
 
         Data array
 
+    num_classes : int
+
+        Number of classes
+
     Returns
     -------
     jax.numpy.array with the empirical frequencies
     """
-    zero = (data == jnp.append(x,0)).all(-1).sum()
-    one = (data == jnp.append(x,1)).all(-1).sum()
-    return jnp.append(zero,one)
+    data = jax.lax.select(jnp.repeat((data[:,:-1] == x).all(1).reshape((data.shape[0],1)),data.shape[1],1),data,-1 + jnp.zeros(data.shape).astype(data.dtype))
+    freq = jax.nn.one_hot(data[:,-1],num_classes)
+    return jnp.sum(freq,0)
+
+get_fpoint = jax.jit(get_fpoint,static_argnames = ['num_classes'])
 
 #Get frequence table
-@jax.jit
-def get_ftable(data,unique):
+def get_ftable(data,unique,num_classes = 2):
     """
     Get empirical frequencies of data with binary outputs
     -------
@@ -86,15 +90,19 @@ def get_ftable(data,unique):
 
         Whether the data is unique, i.e., each input point appears only once in the data
 
+    num_classes : int
+
+        Number of classes
+
     Returns
     -------
     jax.numpy.array
     """
-    #Get dimension
+    #Get domain
     if not unique:
         domain = jnp.unique(data[:,:-1],axis = 0)
-        f = jax.vmap(lambda x: get_fpoint(x,data))(domain)
     else:
         domain = data[:,:-1]
-        f = jnp.append(jnp.where(data[:,-1] == 1,0,1).reshape((data.shape[0],1)),jnp.where(data[:,-1] == 1,1,0).reshape((data.shape[0],1)),1)
+    #Compute frequencies
+    f = jax.vmap(lambda x: get_fpoint(x,data,num_classes))(domain)
     return jnp.append(domain,f,1).astype(data.dtype)

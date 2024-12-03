@@ -9,7 +9,7 @@ import time
 from alive_progress import alive_bar
 
 #Stochastic Descent on the Boolean Interval Partition Lattice
-def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,key = 0,unique = False,intervals = None,block = None):
+def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None):
     """
     Stochastic Lattice Descent Algorithm in the Boolean Interval Partition Lattice
     -------
@@ -43,6 +43,10 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
 
         Array with test data. The last column contains the labels
 
+    num_classes : int
+
+        Number of classes
+
     key : int
 
         Seed for sampling
@@ -71,11 +75,11 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     #Get frequency tables
     print('- Creating frequency tables')
     d = train.shape[1] - 1 #dimension
-    tab_train = dt.get_ftable(train,unique) #Training table
-    tab_val = dt.get_ftable(val,unique) #Validation table
+    tab_train = dt.get_ftable(train,unique,num_classes) #Training table
+    tab_val = dt.get_ftable(val,unique,num_classes) #Validation table
     nval = val.shape[0] #Validation sample size
     if test is not None: #Get test table if there is test data
-        tab_test = dt.get_ftable(test,unique)
+        tab_test = dt.get_ftable(test,unique,num_classes)
 
     #Batches Size
     if unique: #If data is unique, batches of frequency table
@@ -92,7 +96,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
         block = jnp.array([0]) #Array with block of each interval
 
     #Store error
-    current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0]) #Get error
+    current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0],num_classes) #Get error
     k = k + 1 #Update seed
     best_error = current_error #Best error_batch
     best_intervals = intervals.copy() #Best intervals
@@ -121,12 +125,12 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                     k = k + 1 #Update seed
             for b in range(batches): #For each batch
                 #Get frequency table of batch
-                tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval)
+                tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes)
 
                 #Compute probabilities
                 small = jnp.array(math.comb(jnp.max(block) + 1,2)) #Number of ways of uniting intervals
                 dismenber = jnp.power(jnp.bincount(block) - 1,2) - 1 #Number of ways of dimenbering
-                breakInt = ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-2]) #Flag intervals that are limit of intervals
+                breakInt = ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes]) #Flag intervals that are limit of intervals
                 prob = jnp.append(jnp.append(small,jnp.sum(dismenber)),jnp.sum(1 - breakInt)) #Probability of uniting, diemenbering and breaking interval al internal point
                 what_nei = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array([0,1,2]),shape=(sample,),p = prob) #Sample kind of step to take at each sample neighbor
                 k = k + 1 #Update seed
@@ -143,7 +147,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Sample intervals to unite in the sampled block and store the result
-                        store_nei.append(ut.unite_blocks(unite,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0]))
+                        store_nei.append(ut.unite_blocks(unite,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
@@ -154,7 +158,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_blocks(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0]))
+                        store_nei.append(ut.dismenber_blocks(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
@@ -165,7 +169,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Break interval on sampled point and store the result
-                        store_nei.append(ut.break_interval(point_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0]))
+                        store_nei.append(ut.break_interval(point_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
@@ -176,7 +180,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 intervals = store_nei[which_nei]['intervals'] #Update interval
                 del store_nei, error_batch #Delete trace of neighbors
             #Get error current partition at the end of epoch
-            current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0])
+            current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0],num_classes)
             k = k + 1 #Update seed
 
             #Store current partition as best with it has the least error so far
@@ -193,7 +197,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     #Test error
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
-        test_error = ut.get_error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0])
+        test_error = ut.get_error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
 
     #Return
     return {'block': block,'intervals': intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}

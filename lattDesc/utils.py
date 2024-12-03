@@ -7,29 +7,29 @@ import time
 from lattDesc import data as dt
 
 #Get frequency table of batch
-def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval):
+def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes = 2):
     if b < batches - 1: #If it is not last batch
         if unique: #If data is unique, batch of frequency table
             tab_train_batch = tab_train[(b*bsize):((b+1)*bsize),:] #Get frequency table of batch
         else: #Else, compute frequency table of data batch
-            tab_train_batch = dt.get_ftable(train[(b*bsize):((b+1)*bsize),:],unique) #Compute frequency table of batch
+            tab_train_batch = dt.get_ftable(train[(b*bsize):((b+1)*bsize),:],unique,num_classes) #Compute frequency table of batch
     else: #For the last batch
         if unique: #If data is unique, batch of frequency table
             tab_train_batch = tab_train[(b*bsize):,:] #Get frequency table of batch
         else: #Else, compute frequency table of data batch
-            tab_train_batch = dt.get_ftable(train[(b*bsize):,:],unique) #Compute frequency table of batch
+            tab_train_batch = dt.get_ftable(train[(b*bsize):,:],unique,num_classes) #Compute frequency table of batch
     if batch_val: #If batches for validation should be considered
         if b < batches - 1: #If it is not last batch
             if unique: #If data is unique, batch of frequency table
                 tab_val_batch = tab_val[(b*bsize_val):((b+1)*bsize_val),:] #Get frequency table of batch
             else: #Else, compute frequency table of data batch
-                tab_val_batch = dt.get_ftable(val[(b*bsize_val):((b+1)*bsize_val),:],unique) #Compute frequency table of batch
+                tab_val_batch = dt.get_ftable(val[(b*bsize_val):((b+1)*bsize_val),:],unique,num_classes) #Compute frequency table of batch
         else: #For the last batch
             if unique: #If data is unique, batch of frequency table
                 tab_val_batch = tab_val[(b*bsize_val):,:] #Get frequency table of batch
             else: #Else, compute frequency table of data batch
-                tab_val_batch = dt.get_ftable(val[(b*bsize_val):,:],unique) #Compute frequency table of batch
-        bnval = jnp.sum(tab_val_batch[:,-2:])
+                tab_val_batch = dt.get_ftable(val[(b*bsize_val):,:],unique,num_classes) #Compute frequency table of batch
+        bnval = jnp.sum(tab_val_batch[:,-num_classes:])
     else: #No batch for validation
         tab_val_batch = tab_val #Copy frequency table
         bnval = nval #Copy validation sample size
@@ -215,8 +215,7 @@ def get_elements_some_interval(intervals,data):
     return jnp.sum(jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals),0) > 0
 
 #Compute error of a block
-@jax.jit
-def error_block_partition(tab_train,tab_val,nval,key):
+def error_block_partition(tab_train,tab_val,nval,key,num_classes = 2):
     """
     Compute the error a block
     -------
@@ -245,27 +244,16 @@ def error_block_partition(tab_train,tab_val,nval,key):
     float
 
     """
-    freq = jnp.sum(tab_train[:,-2:],0)
+    freq = jnp.sum(tab_train[:,-num_classes:],0)
     pred = jnp.where(freq == jnp.max(freq),False,True)
-    pred = pred.at[0].set(jax.random.choice(jax.random.PRNGKey(key), jnp.array([False,True]),shape=(1,),p = 1 - pred)[0])
-    pred = pred.at[1].set(jax.random.choice(jax.random.PRNGKey(key+1), jnp.array([False,True]),shape=(1,),p = jnp.append(pred[0],1 - pred[0]))[0])
-    freq_val = jnp.sum(tab_val[:,-2:],0)
-    err = jnp.where(pred,freq_val,0)
+    freq_val = jnp.sum(tab_val[:,-num_classes:],0)
+    err = jax.random.choice(jax.random.PRNGKey(key), freq_val,shape=(1,),p = jnp.where(pred,1,0))
     return jnp.sum(err)/nval
-    #Estimate class
-    #freq = jnp.sum(tab_train[:,-2:],0)
-    #if freq[1] > freq[0]:
-    #       not_pred = 0
-    #elif freq[0] < freq[1]:
-    #    not_pred = 1
-    #else:
-    #    not_pred = jax.random.choice(jax.random.PRNGKey(key), jnp.array([0,1]),shape=(1,))
-    #freq_val = jnp.sum(tab_val[:,-2:],0)
-    #return freq_val[not_pred]/nval
+
+error_block_partition = jax.jit(error_block_partition,static_argnames = ['num_classes'])
 
 #Frequency table of block
-@jax.jit
-def ftable_block(intervals,tab):
+def ftable_block(intervals,tab,num_classes = 2):
     """
     Frequency table of a block
     -------
@@ -282,14 +270,15 @@ def ftable_block(intervals,tab):
 
     Returns
     -------
-
     jax.numpy.array
 
     """
-    return jax.lax.select(jnp.repeat(get_elements_some_interval(intervals,tab[:,0:-2,]).reshape((tab.shape[0],1)),tab.shape[1],1),tab,jnp.zeros(tab.shape).astype(tab.dtype)) #tab[get_elements_some_interval(intervals,tab[:,0:-2,]),:]
+    return jax.lax.select(jnp.repeat(get_elements_some_interval(intervals,tab[:,0:-num_classes,]).reshape((tab.shape[0],1)),tab.shape[1],1),tab,jnp.zeros(tab.shape).astype(tab.dtype))
+
+ftable_block = jax.jit(ftable_block,static_argnames = ['num_classes'])
 
 #Get error partition (it is better to not jit)
-def get_error_partition(tab_train,tab_val,intervals,block,nval,key):
+def get_error_partition(tab_train,tab_val,intervals,block,nval,key,num_classes = 2):
     """
     Get error of partition
     -------
@@ -329,9 +318,9 @@ def get_error_partition(tab_train,tab_val,intervals,block,nval,key):
     error = 0
     for i in range(jnp.max(block) + 1):
         tmp_intervals = intervals[block == i,:]
-        tab_train_block = ftable_block(tmp_intervals,tab_train)
-        tab_val_block = ftable_block(tmp_intervals,tab_val)
-        error = error + error_block_partition(tab_train_block,tab_val_block,nval,key)
+        tab_train_block = ftable_block(tmp_intervals,tab_train,num_classes)
+        tab_val_block = ftable_block(tmp_intervals,tab_val,num_classes)
+        error = error + error_block_partition(tab_train_block,tab_val_block,nval,key,num_classes)
     return error
 
 #Break interval at new interval
@@ -531,12 +520,12 @@ def reduce(intervals):
     return intervals,True
 
 #Sample neighbor
-def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key):
+def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Sample interval
-    which_interval = get_interval(point_break[:,:-2],intervals)
-    new_interval,break_interval = get_break_interval(point_break[:,:-2],intervals,which_interval,key[0,0])
+    which_interval = get_interval(point_break[:,:-num_classes],intervals)
+    new_interval,break_interval = get_break_interval(point_break[:,:-num_classes],intervals,which_interval,key[0,0])
     index_interval = jnp.where(which_interval)[0]
     b_break = block[index_interval]
     #Compute interval cover of complement
@@ -544,19 +533,19 @@ def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key):
     where_fill = jax.random.permutation(jax.random.PRNGKey(key[1,0]), where_fill)
     cover_intervals = cover_break_interval(new_interval,where_fill)
     #Divide into two blocks
-    division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0]-2,),replace = True))
+    division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0] - 2,),replace = True))
     division_old = jax.random.choice(jax.random.PRNGKey(key[3,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (jnp.sum(block == b_break) - 1,),replace = True)
     #Update partition
     intervals,block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
     #Compute error
-    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[4,0])
+    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[4,0],num_classes)
     if not step:
         return error
     else:
         return {'block': block,'intervals': intervals,'error': error}
 
 #Unite two blocks
-def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key):
+def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Get error
@@ -572,23 +561,23 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key):
     block = jnp.append(block,jnp.repeat(jnp.min(unite),unite_intervals.shape[0]))
     block = block.at[jnp.where(block > jnp.max(unite))].set(block[jnp.where(block > jnp.max(unite))] - 1)
     #Compute error
-    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[0,0])
+    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[0,0],num_classes)
     if not step:
         return error
     else:
         return {'block': block,'intervals': intervals,'error': error}
 
 #Dismenber block
-def dismenber_blocks(b_break,intervals,block,nval,tab_train,tab_val,step,key):
+def dismenber_blocks(b_break,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Which intervals to dismenber
     max_block = jnp.max(block) + 1
-    division_new = jnp.append(jnp.append(b_break,max_block),jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.append(b_break,max_block),shape = (jnp.sum(block == b_break)-2,),replace = True))
+    division_new = jnp.append(jnp.append(b_break,max_block),jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.append(b_break,max_block),shape = (jnp.sum(block == b_break) - 2,),replace = True))
     division_new = jax.jax.random.permutation(jax.random.PRNGKey(key[1,0]),division_new)
     block = block.at[block == b_break].set(division_new)
     #Compute error
-    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[2,0])
+    error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[2,0],num_classes)
     if not step:
         return error
     else:
