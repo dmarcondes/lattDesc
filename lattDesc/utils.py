@@ -7,33 +7,33 @@ import time
 from lattDesc import data as dt
 
 #Get frequency table of batch
-def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val):
+def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval):
     if b < batches - 1: #If it is not last batch
         if unique: #If data is unique, batch of frequency table
-            tab_train_batch = tab_train[((b-1)*bsize):(b*bsize),:] #Get frequency table of batch
+            tab_train_batch = tab_train[(b*bsize):((b+1)*bsize),:] #Get frequency table of batch
         else: #Else, compute frequency table of data batch
-            tab_train_batch = dt.get_ftable(train[((b-1)*bsize):(b*bsize),:],unique) #Compute frequency table of batch
+            tab_train_batch = dt.get_ftable(train[(b*bsize):((b+1)*bsize),:],unique) #Compute frequency table of batch
     else: #For the last batch
         if unique: #If data is unique, batch of frequency table
-            tab_train_batch = tab_train[((b-1)*bsize):,:] #Get frequency table of batch
+            tab_train_batch = tab_train[(b*bsize):,:] #Get frequency table of batch
         else: #Else, compute frequency table of data batch
-            tab_train_batch = dt.get_ftable(train[((b-1)*bsize):,:],unique) #Compute frequency table of batch
+            tab_train_batch = dt.get_ftable(train[(b*bsize):,:],unique) #Compute frequency table of batch
     if batch_val: #If batches for validation should be considered
         if b < batches - 1: #If it is not last batch
             if unique: #If data is unique, batch of frequency table
-                tab_val_batch = val_train[((b-1)*bsize_val):(b*bsize_val),:] #Get frequency table of batch
+                tab_val_batch = tab_val[(b*bsize_val):((b+1)*bsize_val),:] #Get frequency table of batch
             else: #Else, compute frequency table of data batch
-                tab_val_batch = dt.get_ftable(val[((b-1)*bsize_val):(b*bsize_val),:],unique) #Compute frequency table of batch
+                tab_val_batch = dt.get_ftable(val[(b*bsize_val):((b+1)*bsize_val),:],unique) #Compute frequency table of batch
         else: #For the last batch
             if unique: #If data is unique, batch of frequency table
-                tab_val_batch = tab_val[((b-1)*bsize_val):,:] #Get frequency table of batch
+                tab_val_batch = tab_val[(b*bsize_val):,:] #Get frequency table of batch
             else: #Else, compute frequency table of data batch
-                tab_val_batch = dt.get_ftable(val[((b-1)*bsize_val):,:],unique) #Compute frequency table of batch
+                tab_val_batch = dt.get_ftable(val[(b*bsize_val):,:],unique) #Compute frequency table of batch
         bnval = jnp.sum(tab_val_batch[:,-2:])
     else: #No batch for validation
         tab_val_batch = tab_val #Copy frequency table
         bnval = nval #Copy validation sample size
-    return tab_train_batch,tab_val_batch,nbval
+    return tab_train_batch,tab_val_batch,bnval
 
 #Test if element in interval
 @jax.jit

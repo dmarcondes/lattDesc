@@ -11,9 +11,8 @@ from alive_progress import alive_bar
 #Stochastic Descent on the Boolean Interval Partition Lattice
 def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,key = 0,unique = False,intervals = None,block = None):
     """
-    Stochastic Lattice Descent Algorithm in the Interval Boolean Partition Lattice
+    Stochastic Lattice Descent Algorithm in the Boolean Interval Partition Lattice
     -------
-
     Parameters
     ----------
     train : jax.numpy.array
@@ -62,9 +61,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
 
     Returns
     -------
-
     dictionary with the learned 'block','intervals','best_error' and 'test_error', and the trace of the error ('trace_error') and time ('trace_time') over the epochs
-
     """
     print('------Starting algorithm------')
     #Start seed
@@ -124,44 +121,53 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                     k = k + 1 #Update seed
             for b in range(batches): #For each batch
                 #Get frequency table of batch
-                tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val)
+                tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval)
+
                 #Compute probabilities
                 small = jnp.array(math.comb(jnp.max(block) + 1,2)) #Number of ways of uniting intervals
                 dismenber = jnp.power(jnp.bincount(block) - 1,2) - 1 #Number of ways of dimenbering
-                breakInt = ut.get_limits_some_interval(intervals,tab_train[:,0:-2]) #Flag intervals that are limit of intervals
+                breakInt = ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-2]) #Flag intervals that are limit of intervals
                 prob = jnp.append(jnp.append(small,jnp.sum(dismenber)),jnp.sum(1 - breakInt)) #Probability of uniting, diemenbering and breaking interval al internal point
                 what_nei = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array([0,1,2]),shape=(sample,),p = prob) #Sample kind of step to take at each sample neighbor
                 k = k + 1 #Update seed
+
                 #Objects to store neighbors
                 store_nei = list() #Store neighbors
                 error_batch = jnp.array([]) #Store error
+
                 #Sample neighbors
                 for n in range(sample): #For each neighbor
                     if what_nei[n] == 0: #Unite intervals
                         #Sample block to unite intervals
                         unite = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(2,),replace = False)
                         k = k + 1 #Update seed
+
                         #Sample intervals to unite in the sampled block and store the result
                         store_nei.append(ut.unite_blocks(unite,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0]))
                         k = k + 1 #Update seed
+
                         #Store error
                         error_batch = jnp.append(error_batch,store_nei[-1]['error'])
                     elif what_nei[n] == 1: #Dismenber intervals
                         #Sample block to dismenber intervals
                         b_dis = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(jnp.max(block) + 1))),shape=(1,),p = dismenber)
                         k = k + 1 #Update seed
+
                         #Sample dismenbering of the sampled block and store the result
                         store_nei.append(ut.dismenber_blocks(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0]))
                         k = k + 1 #Update seed
+
                         #Store error
                         error_batch = jnp.append(error_batch,store_nei[-1]['error'])
                     elif what_nei[n] == 2: #Break interval
                         #Sample point to break an interval of the sampled block on
-                        point_break = tab_train[jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(tab_train.shape[0]))),shape=(1,),p = 1 - breakInt),:]
+                        point_break = tab_train_batch[jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(tab_train_batch.shape[0]))),shape=(1,),p = 1 - breakInt),:]
                         k = k + 1 #Update seed
+
                         #Break interval on sampled point and store the result
                         store_nei.append(ut.break_interval(point_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0]))
                         k = k + 1 #Update seed
+
                         #Store error
                         error_batch = jnp.append(error_batch,store_nei[-1]['error'])
                 #Update partition at each batch
@@ -172,17 +178,22 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
             #Get error current partition at the end of epoch
             current_error = ut.get_error_partition(tab_train,tab_val,intervals,block,nval,key[k,0])
             k = k + 1 #Update seed
+
             #Store current partition as best with it has the least error so far
             if current_error < best_error:
                 best_error = current_error #Store error
                 best_intervals = intervals.copy() #Store intervals
                 best_block = block.copy() #Store blocks
                 print('Error: ' + str(round(best_error,3))) #Print error
+
+            #Trace
             trace_error = jnp.append(trace_error,current_error) #Trace error
             trace_time = jnp.append(trace_time,jnp.array([time.time() - tinit])) #Trace time
             bar() #Update bar
+    #Test error
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
         test_error = ut.get_error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0])
+
     #Return
     return {'block': block,'intervals': intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
