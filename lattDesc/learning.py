@@ -158,7 +158,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_block(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
+                        store_nei.append(ut.dismenber_blocks(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
