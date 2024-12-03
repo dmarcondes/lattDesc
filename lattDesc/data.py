@@ -1,5 +1,6 @@
 #Process data for lattice descent algorithms
 import jax
+jax.config.update('jax_platform_name', 'cpu')
 from jax import numpy as jnp
 import pandas as pd
 from itertools import product

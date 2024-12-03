@@ -1,9 +1,39 @@
 #Utility functions lattDesc
 import jax
+jax.config.update('jax_platform_name', 'cpu')
 from jax import numpy as jnp
 import numpy as np
 import time
-from itertools import compress
+from lattDesc import data as dt
+
+#Get frequency table of batch
+def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val):
+    if b < batches - 1: #If it is not last batch
+        if unique: #If data is unique, batch of frequency table
+            tab_train_batch = tab_train[((b-1)*bsize):(b*bsize),:] #Get frequency table of batch
+        else: #Else, compute frequency table of data batch
+            tab_train_batch = dt.get_ftable(train[((b-1)*bsize):(b*bsize),:],unique) #Compute frequency table of batch
+    else: #For the last batch
+        if unique: #If data is unique, batch of frequency table
+            tab_train_batch = tab_train[((b-1)*bsize):,:] #Get frequency table of batch
+        else: #Else, compute frequency table of data batch
+            tab_train_batch = dt.get_ftable(train[((b-1)*bsize):,:],unique) #Compute frequency table of batch
+    if batch_val: #If batches for validation should be considered
+        if b < batches - 1: #If it is not last batch
+            if unique: #If data is unique, batch of frequency table
+                tab_val_batch = val_train[((b-1)*bsize_val):(b*bsize_val),:] #Get frequency table of batch
+            else: #Else, compute frequency table of data batch
+                tab_val_batch = dt.get_ftable(val[((b-1)*bsize_val):(b*bsize_val),:],unique) #Compute frequency table of batch
+        else: #For the last batch
+            if unique: #If data is unique, batch of frequency table
+                tab_val_batch = tab_val[((b-1)*bsize_val):,:] #Get frequency table of batch
+            else: #Else, compute frequency table of data batch
+                tab_val_batch = dt.get_ftable(val[((b-1)*bsize_val):,:],unique) #Compute frequency table of batch
+        bnval = jnp.sum(tab_val_batch[:,-2:])
+    else: #No batch for validation
+        tab_val_batch = tab_val #Copy frequency table
+        bnval = nval #Copy validation sample size
+    return tab_train_batch,tab_val_batch,nbval
 
 #Test if element in interval
 @jax.jit
@@ -502,8 +532,6 @@ def reduce(intervals):
 
 #Sample neighbor
 def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key):
-    print('Break')
-    t0 = time.time()
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
     #Sample interval
@@ -522,7 +550,6 @@ def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key):
     intervals,block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
     #Compute error
     error = get_error_partition(tab_train,tab_val,intervals,block,nval,key[4,0])
-    print(time.time() - t0)
     if not step:
         return error
     else:
