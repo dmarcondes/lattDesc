@@ -233,7 +233,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
         os.system("ffmpeg -framerate " + str(framerate) + " -i " + filename + "_%5d.png " + filename + ".mp4")
 
     #Return
-    return {'block': block,'intervals': intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
+    return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
 
 #Stochastic ISI algorithm
 def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique = False):
@@ -280,17 +280,18 @@ def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique =
     trace_time = jnp.array([])
 
     #Frequency table
-    tab = dt.get_ftable(train,unique,num_classes)
-    tab = jax.random.permutation(jax.random.PRNGKey(key[k,0]),tab,0) #Random permutation
+    tab_train = dt.get_ftable(train,unique,num_classes)
+    tab_train = jax.random.permutation(jax.random.PRNGKey(key[k,0]),tab_train,0) #Random permutation
+    ntrain = train.shape[0]
     k = k + 1
     if test is not None:
         tab_test = dt.get_ftable(test,unique,num_classes)
 
     #Get label of each observed domain point
-    label = jax.vmap(lambda x: jnp.where(x == jnp.max(x),1,0))(tab[:,-num_classes:])
+    label = jax.vmap(lambda x: jnp.where(x == jnp.max(x),1,0))(tab_train[:,-num_classes:])
 
     #Only points without tie
-    tab = tab[jnp.sum(label,1) == 1,:]
+    tab = tab_train[jnp.sum(label,1) == 1,:]
     label = label[jnp.sum(label,1) == 1,:]
     label = jnp.sum(jax.vmap(lambda x: jnp.where(x == 1,jnp.arange(num_classes),0))(label),1)
 
@@ -314,7 +315,7 @@ def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique =
             point_break = tab[jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(tab.shape[0]))),shape=(1,),p = prob),:]
             k = k + 1 #Update seed
             #Update partition
-            new_partition = ut.break_interval(point_break,intervals,block,tab.shape[0],tab,tab,step = True,key = key[k,0],num_classes = num_classes)
+            new_partition = ut.break_interval(point_break,intervals,block,ntrain,tab_train,tab_train,step = True,key = key[k,0],num_classes = num_classes)
             intervals = new_partition['intervals']
             block = new_partition['block']
             error = new_partition['error']
@@ -326,7 +327,6 @@ def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique =
             prob = jnp.where(label != class_break,0,prob)
             limit = ut.get_limits_some_interval(intervals,tab[:,:-num_classes])
             prob = jnp.where(limit,0,prob)
-            print(jnp.bincount(prob))
             step = step + 1
             trace_error = jnp.append(trace_error,error)
             trace_time = jnp.append(trace_time,jnp.array(time.time() - t0))
@@ -340,4 +340,4 @@ def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique =
     if test is not None:
         test_error = ut.error_partition(tab,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
 
-    return intervals,block,test_error,trace_error,trace_time
+    return {'block': block,'intervals': intervals,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}

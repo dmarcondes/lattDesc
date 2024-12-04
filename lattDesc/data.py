@@ -12,6 +12,7 @@ import math
 import os
 from PIL import Image
 from IPython.display import display
+import numpy as np
 
 #Generate binary synthetic data
 def synthetic_binary_data(n,d,key):

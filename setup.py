@@ -14,7 +14,7 @@ setup(
         description=DESCRIPTION,
         long_description=LONG_DESCRIPTION,
         packages=find_packages(),
-        install_requires=['jax','alive_progress','IPython'], # add any additional packages that
+        install_requires=['jax','alive_progress','IPython','plotly','Pillow'], # add any additional packages that
         # needs to be installed along with your package. Eg: 'caer'
 
         keywords=['python', 'JAX', 'lattice descent'],
