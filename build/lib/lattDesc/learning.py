@@ -233,7 +233,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
         os.system("ffmpeg -framerate " + str(framerate) + " -i " + filename + "_%5d.png " + filename + ".mp4")
 
     #Return
-    return {'block': block,'intervals': intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
+    return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
 
 #Stochastic ISI algorithm
 def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique = False):
