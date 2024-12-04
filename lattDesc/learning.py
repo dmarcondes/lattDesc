@@ -124,7 +124,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
 
     #If video
     if video:
-        dt.picture_partition(intervals,block,title = 'Epoch 0 Error = ' + str(round(current_error,2)),filename = filename + '_' + str(0).zfill(5))
+        dt.picture_partition(intervals,block,title = 'Epoch 0 Error = ' + str(round(current_error,3)),filename = filename + '_' + str(0).zfill(5))
 
     #Objects to trace
     trace_error = jnp.array([]) #Trace algorithm time
@@ -220,7 +220,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
 
             #If video
             if video:
-                dt.picture_partition(intervals,block,title = 'Epoch ' + str(e) + ' Error = ' + str(round(current_error,2)),filename = filename + '_' + str(e + 1).zfill(5))
+                dt.picture_partition(intervals,block,title = 'Epoch ' + str(e) + ' Error = ' + str(round(current_error,3)),filename = filename + '_' + str(e + 1).zfill(5))
             bar() #Update bar
     #Test error
     test_error = None #Initialize test error
@@ -236,22 +236,55 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     return {'block': block,'intervals': intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
 
 #Stochastic ISI algorithm
-def stochasticISI(train,class_break,key,unique = False,num_clasess = 2):
-    key = 0
-    unique = False
-    num_classes = 2
-    class_break = 0
+def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique = False):
+    """
+    Stochastic Incremental Splitting of Intervals (ISI) algorithm
+     -------
+    Parameters
+    ----------
+    train : jax.numpy.array
+
+        Array with training data. The last column contains the labels
+
+    class_break : int
+
+        Which class to break the intervals on
+
+    test : jax.numpy.array
+
+        Array with test data. The last column contains the labels
+
+    num_classes : int
+
+        Number of classes
+
+    key : int
+
+        Seed for sampling
+
+    unique : logical
+
+        Whether the data is unique, i.e., each input point appears only once in the data
+
+    Returns
+    -------
+    dictionary with the learned 'block','intervals','best_error' and 'test_error', and the trace of the error ('trace_error') and time ('trace_time') over the epochs
+    """
     #Start seed
     key = jax.random.split(jax.random.PRNGKey(key),10*train.shape[0])
     k = 0
 
     #Parameters
     d = train.shape[1] - 1
+    trace_error = jnp.array([])
+    trace_time = jnp.array([])
 
     #Frequency table
     tab = dt.get_ftable(train,unique,num_classes)
     tab = jax.random.permutation(jax.random.PRNGKey(key[k,0]),tab,0) #Random permutation
     k = k + 1
+    if test is not None:
+        tab_test = dt.get_ftable(test,unique,num_classes)
 
     #Get label of each observed domain point
     label = jax.vmap(lambda x: jnp.where(x == jnp.max(x),1,0))(tab[:,-num_classes:])
@@ -266,6 +299,7 @@ def stochasticISI(train,class_break,key,unique = False,num_clasess = 2):
     block = jnp.array([0]) #Array with block of each interval
 
     #Probability of each point
+    t0 = time.time()
     freq = jax.vmap(lambda interval: ut.frequency_labels_interval(interval,tab[:,:-num_classes],label,num_classes))(intervals)
     prob = jnp.where(jnp.min(freq,1) > 0,1,0)
     prob = jnp.sum(jax.vmap(lambda point: jnp.where(ut.get_interval(point,intervals),prob,0))(tab[:,:-num_classes]),1)
@@ -273,6 +307,7 @@ def stochasticISI(train,class_break,key,unique = False,num_clasess = 2):
     limit = ut.get_limits_some_interval(intervals,tab[:,:-num_classes])
     prob = jnp.where(limit,0,prob)
     step = 0
+    best_error = 1
     with alive_bar() as bar:
         while(jnp.max(prob) == 1):
             #Sample point to break
@@ -282,7 +317,7 @@ def stochasticISI(train,class_break,key,unique = False,num_clasess = 2):
             new_partition = ut.break_interval(point_break,intervals,block,tab.shape[0],tab,tab,step = True,key = key[k,0],num_classes = num_classes)
             intervals = new_partition['intervals']
             block = new_partition['block']
-            print(new_partition['error'])
+            error = new_partition['error']
             k = k + 1 #Update seed
             #Update probabilities
             freq = jax.vmap(lambda interval: ut.frequency_labels_interval(interval,tab[:,:-num_classes],label,num_classes))(intervals)
@@ -293,6 +328,16 @@ def stochasticISI(train,class_break,key,unique = False,num_clasess = 2):
             prob = jnp.where(limit,0,prob)
             print(jnp.bincount(prob))
             step = step + 1
+            trace_error = jnp.append(trace_error,error)
+            trace_time = jnp.append(trace_time,jnp.array(time.time() - t0))
+            if error < best_error:
+                print('Step ' + str(step) + ' Error ' + str(round(error,3)))
+                best_error = error
             bar()
 
-    return intervals,block
+    #Get test error
+    test_error = None
+    if test is not None:
+        test_error = ut.error_partition(tab,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
+
+    return intervals,block,test_error,trace_error,trace_time

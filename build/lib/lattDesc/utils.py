@@ -789,3 +789,9 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,key,num_cl
         return error
     else:
         return {'block': block,'intervals': intervals,'error': error}
+
+#Frequency of labels of points in a interval
+def frequency_labels_interval(interval,data,labels,num_classes = 2):
+    return jnp.bincount(jnp.where(get_elements_interval(interval,data),labels,num_classes),length = num_classes + 1)[:-1]
+
+frequency_labels_interval = jax.jit(frequency_labels_interval,static_argnames = ['num_classes'])

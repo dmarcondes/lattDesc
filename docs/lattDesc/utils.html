@@ -93,6 +93,9 @@
             <li>
                     <a class="function" href="#dismenber_block">dismenber_block</a>
             </li>
+            <li>
+                    <a class="function" href="#frequency_labels_interval">frequency_labels_interval</a>
+            </li>
     </ul>
 
 
@@ -905,6 +908,12 @@
 </span><span id="L-789"><a href="#L-789"><span class="linenos">789</span></a>        <span class="k">return</span> <span class="n">error</span>
 </span><span id="L-790"><a href="#L-790"><span class="linenos">790</span></a>    <span class="k">else</span><span class="p">:</span>
 </span><span id="L-791"><a href="#L-791"><span class="linenos">791</span></a>        <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;block&#39;</span><span class="p">:</span> <span class="n">block</span><span class="p">,</span><span class="s1">&#39;intervals&#39;</span><span class="p">:</span> <span class="n">intervals</span><span class="p">,</span><span class="s1">&#39;error&#39;</span><span class="p">:</span> <span class="n">error</span><span class="p">}</span>
+</span><span id="L-792"><a href="#L-792"><span class="linenos">792</span></a>
+</span><span id="L-793"><a href="#L-793"><span class="linenos">793</span></a><span class="c1">#Frequency of labels of points in a interval</span>
+</span><span id="L-794"><a href="#L-794"><span class="linenos">794</span></a><span class="k">def</span> <span class="nf">frequency_labels_interval</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span><span class="n">data</span><span class="p">,</span><span class="n">labels</span><span class="p">,</span><span class="n">num_classes</span> <span class="o">=</span> <span class="mi">2</span><span class="p">):</span>
+</span><span id="L-795"><a href="#L-795"><span class="linenos">795</span></a>    <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">get_elements_interval</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span><span class="n">data</span><span class="p">),</span><span class="n">labels</span><span class="p">,</span><span class="n">num_classes</span><span class="p">),</span><span class="n">length</span> <span class="o">=</span> <span class="n">num_classes</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+</span><span id="L-796"><a href="#L-796"><span class="linenos">796</span></a>
+</span><span id="L-797"><a href="#L-797"><span class="linenos">797</span></a><span class="n">frequency_labels_interval</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">(</span><span class="n">frequency_labels_interval</span><span class="p">,</span><span class="n">static_argnames</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;num_classes&#39;</span><span class="p">])</span>
 </span></pre></div>
 
 
@@ -2617,6 +2626,25 @@
 <p>jax.numpy.arrays of intervals and block and/or the error of the sampled partition</p>
 </div>
 
+
+                </section>
+                <section id="frequency_labels_interval">
+                            <input id="frequency_labels_interval-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">frequency_labels_interval</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">interval</span>, </span><span class="param"><span class="n">data</span>, </span><span class="param"><span class="n">labels</span>, </span><span class="param"><span class="n">num_classes</span><span class="o">=</span><span class="mi">2</span></span><span class="return-annotation">):</span></span>
+
+                <label class="view-source-button" for="frequency_labels_interval-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#frequency_labels_interval"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="frequency_labels_interval-795"><a href="#frequency_labels_interval-795"><span class="linenos">795</span></a><span class="k">def</span> <span class="nf">frequency_labels_interval</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span><span class="n">data</span><span class="p">,</span><span class="n">labels</span><span class="p">,</span><span class="n">num_classes</span> <span class="o">=</span> <span class="mi">2</span><span class="p">):</span>
+</span><span id="frequency_labels_interval-796"><a href="#frequency_labels_interval-796"><span class="linenos">796</span></a>    <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">get_elements_interval</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span><span class="n">data</span><span class="p">),</span><span class="n">labels</span><span class="p">,</span><span class="n">num_classes</span><span class="p">),</span><span class="n">length</span> <span class="o">=</span> <span class="n">num_classes</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+</span></pre></div>
+
+
+    
 
                 </section>
     </main>

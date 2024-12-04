@@ -10,6 +10,8 @@ import plotly
 from lattDesc import utils as ut
 import math
 import os
+from PIL import Image
+from IPython.display import display
 
 #Generate binary synthetic data
 def synthetic_binary_data(n,d,key):
@@ -210,3 +212,258 @@ def picture_partition(intervals,block,title = 'abc',filename = 'image'):
             print('\\end{document}')
     os.system('pdflatex ' + filename + '.tex > /dev/null')
     os.system('rm *.tex *.log *.aux > /dev/null')
+
+#Read and organize a data.frame
+def read_data_frame(file,sep = None,header = 'infer',sheet = 0):
+    """
+    Read a data file and convert to JAX array
+    -------
+    Parameters
+    ----------
+    file : str
+
+        File name with extension .csv, .txt, .xls or .xlsx
+
+    sep : str
+
+        Separation character for .csv and .txt files. Default ',' for .csv and ' ' for .txt
+
+    header : int, Sequence of int, ‘infer’ or None
+
+        See pandas.read_csv documentation. Default 'infer'
+
+    sheet : int
+
+        Sheet number for .xls and .xlsx files. Default 0
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+
+    #Find out data extension
+    ext = file.split('.')[1]
+
+    #Read data frame
+    if ext == 'csv':
+        if sep is None:
+            sep = ','
+        dat = pandas.read_csv(file,sep = sep,header = header)
+    elif ext == 'txt':
+        if sep is None:
+            sep = ' '
+        dat = pandas.read_table(file,sep = sep,header = header)
+    elif ext == 'xls' or ext == 'xlsx':
+        dat = pandas.read_excel(file,header = header,sheet_name = sheet)
+
+    #Convert to JAX data structure
+    dat = jnp.array(dat,dtype = jnp.float32)
+
+    return dat
+
+#Read images into an array
+def image_to_jnp(files_path,binary = False):
+    """
+    Read an image file and convert to JAX array
+    -------
+    Parameters
+    ----------
+    files_path : list of str
+
+        List with the paths of the images to read
+
+    binary : logical
+
+        Whether the image should be binarized
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    dat = None
+    for f in files_path:
+        img = Image.open(f)
+        img = jnp.array(img,dtype = jnp.float32)/255
+        if len(img.shape) == 3:
+            img = img.reshape((1,img.shape[0],img.shape[1],img.shape[2]))
+        else:
+            img = img.reshape((1,img.shape[0],img.shape[1]))
+        if binary:
+            img = img.at[img <= 0.5].set(0)
+            img = img.at[img > 0.5].set(1)
+        if dat is None:
+            dat = img
+        else:
+            dat = jnp.append(dat,img,0)
+    return dat
+
+#Save images
+def save_images(images,files_path):
+    """
+    Save images in a JAX array to file
+    -------
+    Parameters
+    ----------
+    images : jax.numpy.array
+
+        Array of images
+
+    files_path : list of str
+
+        List with the paths of the images to write
+    """
+    if len(files_path) > 1:
+        for i in range(len(files_path)):
+            if len(images.shape) == 4:
+                tmp = Image.fromarray(np.uint8(jnp.round(255*images[i,:,:,:]))).convert('RGB')
+            else:
+                tmp = Image.fromarray(np.uint8(jnp.round(255*images[i,:,:])))
+            tmp.save(files_path[i])
+    else:
+        if len(images.shape) == 4:
+            tmp = Image.fromarray(np.uint8(jnp.round(255*images[0,:,:,:]))).convert('RGB')
+        else:
+            tmp = Image.fromarray(np.uint8(jnp.round(255*images[0,:,:])))
+        tmp.save(files_path[0])
+
+#Print images
+def print_images(images):
+    """
+    Print images
+    -------
+    Parameters
+    ----------
+    images : jax.numpy.array
+
+    Array of images
+    """
+    for i in range(images.shape[0]):
+        if len(images.shape) == 4:
+            tmp = Image.fromarray(np.uint8(jnp.round(255*images[i,:,:,:]))).convert('RGB')
+        else:
+            tmp = Image.fromarray(np.uint8(jnp.round(255*images[i,:,:]))).convert('RGB')
+        display(tmp)
+
+#Create an index array for an array
+def index_array(shape):
+    """
+    Create a 2D array with the indexes of an array with given 2D shape
+    -------
+    Parameters
+    ----------
+    shape : list
+
+        List with shape of 2D array
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    return jnp.array([[x,y] for x in range(shape[0]) for y in range(shape[1])])
+
+#Process binary images by window W at a coordinate (input should be padded)
+@jax.jit
+def process_window_coord(coord,input,output,W,pad):
+    """
+    Process a binary image by a window W at a coordinate
+    -------
+    Parameters
+    ----------
+    coord : jax.numpy.array
+
+        A coordinate array
+
+    input : jax.numpy.array
+
+        Input image. It shoould be padded with zeroes
+
+    output : jax.numpy.array
+
+        Output image
+
+    W : jax.numpy.array
+
+        An array with the coordinates of the window
+
+    pad : int
+
+        List with the paths of the images to write
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    i = coord[0]
+    j = coord[1]
+    vars = jnp.array([])
+    for k in range(W.shape[0]):
+        vars = jnp.append(vars,input[pad + i + W[k,1],pad + j + W[k,0]])
+    vars = jnp.append(vars,output[i,j])
+    return vars
+
+#Process binary images by window W (input is already padded)
+@jax.jit
+def process_window(input,output,index,W,pad):
+    """
+    Process a binary image by a window W
+    -------
+    Parameters
+    ----------
+    input : jax.numpy.array
+
+        Input image. It shoould be padded with zeroes
+
+    output : jax.numpy.array
+
+        Output image
+
+    W : jax.numpy.array
+
+        An array with the coordinates of the window
+
+    pad : int
+
+        List with the paths of the images to write
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    return jax.vmap(lambda coord: process_window_coord(coord,input,output,W,pad))(index)
+
+#Process batch of binary images by window W
+def process_window_batch(input,output,W,pad):
+    """
+    Process a batch of binary images by a window W at a coordinate
+    -------
+    Parameters
+    ----------
+    coord : jax.numpy.array
+
+        A coordinate array
+
+    input : jax.numpy.array
+
+        Input image. It shoould be padded with zeroes
+
+    output : jax.numpy.array
+
+        Output image
+
+    W : jax.numpy.array
+
+        An array with the coordinates of the window
+
+    pad : int
+
+        List with the paths of the images to write
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    padded = jax.lax.pad(input,0.0,((0,0,0),(pad,pad,0),(pad,pad,0)))
+    index = index_array((input.shape[1],input.shape[2]))
+    data = jax.vmap(lambda input,output: process_window(input,output,index,W,pad))(padded,output)
+    data = data.reshape((data.shape[0]*data.shape[1],data.shape[2]))
+    return data

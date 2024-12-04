@@ -1,7 +1,3 @@
 IPython
 alive_progress
 jax
-openpyxl
-optax
-pandas
-pillow
