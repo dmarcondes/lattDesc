@@ -152,13 +152,13 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes)
 
                 #Compute probabilities
-                small = jnp.array(math.comb(jnp.max(block) + 1,2)) #Number of ways of uniting intervals
+                small = jnp.array(math.comb(jnp.max(block) + 1,2)) #Number of ways of uniting blocks
                 dismenber = jnp.power(jnp.bincount(block) - 1,2) - 1 #Number of ways of dimenbering
-                breakInt = ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes]) #Flag intervals that are limit of intervals
-                prob = jnp.append(jnp.append(small,jnp.sum(dismenber)),jnp.sum(1 - breakInt)) #Probability of uniting, diemenbering and breaking interval al internal point
+                #breakInt = ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes]) #Flag intervals that are limit of intervals
+                prob = jnp.append(jnp.append(small,jnp.sum(dismenber)),(small + jnp.sum(dismenber) + 2)) #Probability of uniting, diemenbering and breaking interval al internal point
                 what_nei = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array([0,1,2]),shape=(sample,),p = prob) #Sample kind of step to take at each sample neighbor
                 k = k + 1 #Update seed
-
+                
                 #Objects to store neighbors
                 store_nei = list() #Store neighbors
                 error_batch = jnp.array([]) #Store error
@@ -189,7 +189,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         error_batch = jnp.append(error_batch,store_nei[-1]['error'])
                     elif what_nei[n] == 2: #Break interval
                         #Sample point to break an interval of the sampled block on
-                        point_break = tab_train_batch[jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(tab_train_batch.shape[0]))),shape=(1,),p = 1 - breakInt),:]
+                        point_break = tab_train_batch[jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(tab_train_batch.shape[0]))),shape=(1,)),:]
                         k = k + 1 #Update seed
 
                         #Break interval on sampled point and store the result
@@ -226,14 +226,19 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
         test_error = ut.error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
+        k = k + 1
 
     #Create video
     if video:
         os.system('for f in *.pdf; do convert -density 500 ./"$f" -quality 100 -background white -alpha remove -alpha off ./"${f%.pdf}.png"; done')
         os.system("ffmpeg -framerate " + str(framerate) + " -i " + filename + "_%5d.png " + filename + ".mp4")
 
+    #Estimated function
+    label_intervals = ut.estimate_label_partition(tab_train,best_intervals,best_block,num_classes,key = key[k,0])
+    f = ut.get_estimated_function(tab_train,best_intervals,best_block,num_classes,key = key[k,0])
+
     #Return
-    return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
+    return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}
 
 #Stochastic ISI algorithm
 def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None):
@@ -348,5 +353,10 @@ def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique =
     test_error = None
     if test is not None:
         test_error = ut.error_partition(tab,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
+        k = k + 1
 
-    return {'block': block,'intervals': intervals,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
+    #Estimated function
+    label_intervals = ut.estimate_label_partition(tab_train,intervals,block,num_classes,key = key[k,0])
+    f = ut.get_estimated_function(tab_train,intervals,block,num_classes,key = key[k,0])
+
+    return {'block': block,'intervals': intervals,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}

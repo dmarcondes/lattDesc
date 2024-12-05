@@ -93,6 +93,27 @@ def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,u
         bnval = nval #Copy validation sample size
     return tab_train_batch,tab_val_batch,bnval
 
+#Teste partial order
+def partial_order(x,y):
+    """
+    Test if x <= y
+    -------
+    Parameters
+    ----------
+    x : jax.numpy.array
+
+        Point
+
+    y : jax.numpy.array
+
+        Point
+
+    Returns
+    -------
+    logical
+    """
+    return jnp.sum(jnp.where(x <= y,1,0)) == x.shape[0]
+
 #Test if element is in interval
 @jax.jit
 def test_interval(interval,x):
@@ -294,6 +315,115 @@ def error_block(tab_train,tab_val,nval,key,num_classes = 2):
 
 error_block = jax.jit(error_block,static_argnames = ['num_classes'])
 
+#Get label of each interval
+def estimate_label_block(tab_train,intervals,num_classes = 2,key = 0):
+    """
+    Estimate the label of an interval from training data
+    -------
+    Parameters
+    ----------
+    tab_train : jax.numpy.array
+
+        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+
+    intervals : jax.numpy.array
+
+        Intervals of block
+
+    num_classes : int
+
+        Number of classes
+
+    key : int
+
+        Seed for random classification in the presence of ties
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    tab_train = ftable_block(intervals,tab_train,num_classes)
+    freq = jnp.sum(tab_train[:,-num_classes:],0)
+    pred = freq == jnp.max(freq)
+    pred = jax.random.choice(jax.random.PRNGKey(key), jnp.arange(num_classes),shape=(1,),p = jnp.where(pred,1,0))
+    return pred
+
+estimate_label_block = jax.jit(estimate_label_block,static_argnames = ['num_classes'])
+
+#Estimate the label of a partition
+def estimate_label_partition(tab_train,intervals,block,num_classes = 2,key = 0):
+    """
+    Estimate the label of a partition from training data
+    -------
+    Parameters
+    ----------
+    tab_train : jax.numpy.array
+
+        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+
+    intervals : jax.numpy.array
+
+        Array of intervals that define the partition
+
+    block : jax.numpy.array
+
+        Array with the block of each interval
+
+    num_classes : int
+
+        Number of classes
+
+    key : int
+
+        Seed for random classification in the presence of ties
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    pred = jnp.zeros((intervals.shape[0],))
+    for i in range(jnp.max(block) + 1):
+        tmp_intervals = intervals[block == i,:]
+        pred_block = estimate_label_block(tab_train,tmp_intervals,num_classes,key)
+        pred = jnp.where(block == i,pred_block,pred)
+    return pred
+
+#Get estimated function
+def get_estimated_function(tab_train,intervals,block,num_classes = 2,key = 0):
+    """
+    Get estimated function of partition
+    -------
+    Parameters
+    ----------
+    tab_train : jax.numpy.array
+
+        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+
+    intervals : jax.numpy.array
+
+        Array of intervals that define the partition
+
+    block : jax.numpy.array
+
+        Array with the block of each interval
+
+    num_classes : int
+
+        Number of classes
+
+    key : int
+
+        Seed for random classification in the presence of ties
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    label_blocks = estimate_label_partition(tab_train,intervals,block,num_classes,key)
+    def f(point):
+        return jnp.sum(jnp.where(get_interval(point,intervals),label_blocks,0))
+    return jax.jit(f)
+
 #Frequency table of block
 def ftable_block(intervals,tab,num_classes = 2):
     """
@@ -467,7 +597,7 @@ def get_interval(point,intervals):
     return jax.vmap(lambda interval: test_interval(interval,point))(intervals)
 
 #Sample interval
-def sample_break_interval(point,intervals,which_interval,key):
+def sample_break_interval(point,intervals,which_interval,domain,key):
     """
     Sample interval to break at a given point
     -------
@@ -491,14 +621,28 @@ def sample_break_interval(point,intervals,which_interval,key):
     """
     #Get interval to break on
     break_interval = intervals[which_interval,:]
-    #Break inf or sup
-    new_interval = point
-    inf_sup = jax.random.choice(jax.random.PRNGKey(key), jnp.array([0,1]),shape=(1,))
-    if inf_sup == 0:
-        new_interval = sample_inf(new_interval,break_interval)
+    if test_limit_interval(break_interval,point):
+        if jnp.sum(break_interval == -1) == 1:
+            return None,None
+        points_interval = domain[get_limits_some_interval(break_interval,domain),:]
+        points_interval = jnp.delete(points_interval,jnp.where(get_limits_some_interval(break_interval,points_interval)),0)
+        if points_interval.shape[0] == 1:
+            return None,None
+        new_interval = points_interval[jax.random.choice(jax.random.PRNGKey(key), jnp.arange(points_interval.shape[0]),shape=(1,)),:]
+        if partial_order(new_interval,point):
+            new_interval = sample_sup(new_interval,break_interval)
+        else:
+            new_interval = sample_inf(new_interval,break_interval)
+        return new_interval,break_interval
     else:
-        new_interval = sample_sup(new_interval,break_interval)
-    return new_interval,break_interval
+        #Break inf or sup
+        new_interval = point
+        inf_sup = jax.random.choice(jax.random.PRNGKey(key), jnp.array([0,1]),shape=(1,))
+        if inf_sup == 0:
+            new_interval = sample_inf(new_interval,break_interval)
+        else:
+            new_interval = sample_sup(new_interval,break_interval)
+        return new_interval,break_interval
 
 #Update partition
 def update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new):
@@ -624,7 +768,12 @@ def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key,n
 
     #Sample interval
     which_interval = get_interval(point_break[:,:-num_classes],intervals)
-    new_interval,break_interval = sample_break_interval(point_break[:,:-num_classes],intervals,which_interval,key[0,0])
+    new_interval,break_interval = sample_break_interval(point_break[:,:-num_classes],intervals,which_interval,tab_train[:,:-num_classes],key[0,0])
+    if new_interval is None:
+        if not step:
+            return 1.1
+        else:
+            return {'block': block,'intervals': intervals,'error': 1.1}
     index_interval = jnp.where(which_interval)[0]
     b_break = block[index_interval]
 
@@ -773,16 +922,23 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,key,num_cl
     #Seed
     key = jax.random.split(jax.random.PRNGKey(key),10)
 
+    #Test if can be dismenbered (get number of elements in each interval)
+    occupied = jnp.sum(jax.vmap(lambda interval: get_elements_interval(interval,tab_train[:,:-2]))(intervals[block == b_dis,:]),1) > 0
+    if jnp.sum(occupied) < 2:
+        #print('Invalid!')
+        return {'block': block,'intervals': intervals,'error': 1.1}
+
     #How to dismenber
     max_block = jnp.max(block) + 1
-    division_new = jnp.append(jnp.append(b_dis,max_block),jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.append(b_dis,max_block),shape = (jnp.sum(block == b_dis) - 2,),replace = True))
-    division_new = jax.jax.random.permutation(jax.random.PRNGKey(key[1,0]),division_new)
+    sample_div_occupied = np.append(jnp.append(b_dis,max_block),jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.append(b_dis,max_block),shape = (jnp.sum(block == b_dis) - 2,),replace = True))
+    sample_div_empty = jax.random.choice(jax.random.PRNGKey(key[1,0]), jnp.append(b_dis,max_block),shape = (jnp.sum(block == b_dis),),replace = True)
+    division_new = jnp.where(occupied,sample_div_occupied,sample_div_empty)
 
     #Update block
     block = block.at[block == b_dis].set(division_new)
 
     #Compute error
-    error = error_partition(tab_train,tab_val,intervals,block,nval,key[2,0],num_classes)
+    error = error_partition(tab_train,tab_val,intervals,block,nval,key[3,0],num_classes)
 
     #Return
     if not step:
