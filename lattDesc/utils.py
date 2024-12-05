@@ -254,6 +254,11 @@ def get_elements_interval(interval,data):
     """
     return jax.vmap(lambda x: test_interval(interval,x))(data)
 
+#Get elements in each interval
+@jax.jit
+def get_elements_each_interval(intervals,data):
+     return jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals)
+
 #Get elements in some interval
 @jax.jit
 def get_elements_some_interval(intervals,data):
@@ -626,7 +631,7 @@ def sample_break_interval(point,intervals,which_interval,domain,key):
         if jnp.sum(break_interval == -1) == 1:
             return None,None
         points_interval = domain[get_limits_some_interval(break_interval,domain),:]
-        points_interval = jnp.delete(points_interval,jnp.where(get_limits_some_interval(break_interval,points_interval))[0],0)
+        points_interval = jit_row_delete(points_interval,jnp.where(get_limits_some_interval(break_interval,points_interval))[0])
         if points_interval.shape[0] == 0:
             value = jnp.append(jnp.arange(2),jax.random.choice(jax.random.PRNGKey(key+1),jnp.arange(2),shape = (1,jnp.sum(break_interval == -1) - 2)))
             value = jax.random.permutation(jax.random.PRNGKey(key + 2),value,0)
@@ -689,12 +694,13 @@ def update_partition(b_break,intervals,cover_intervals,block,index_interval,divi
     jax.numpy.arrays of intervals and block
     """
     intervals = jnp.append(intervals,cover_intervals,0)
-    intervals = jnp.delete(intervals,index_interval,0)
+    intervals = jit_row_delete(intervals,index_interval)
     max_block = jnp.max(block)
-    block = jnp.delete(block,index_interval)
-    block = block.at[block == b_break].set(division_old)
+    block = jit_delete(block,index_interval)
+    block = jnp.where(block == b_break,division_old,block)
     block = jnp.append(block,jnp.where(division_new == 0,b_break,max_block + 1))
     return intervals,block
+
 
 #One step reduction
 def reduce(intervals):
@@ -720,6 +726,49 @@ def reduce(intervals):
                     intervals = jnp.append(intervals,united.reshape((1,united.shape[0])),0)
                     return intervals,False
     return intervals,True
+
+#Jit delete
+@jax.jit
+def jit_delete(x, i):
+    """
+    Jitted delete function
+    -------
+    Parameters
+    ----------
+    x : jax.numpy.array
+
+        1D array
+
+    i : jax.numpy.array
+
+        Indexes to delete
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    return jnp.delete(x,i,assume_unique_indices = True)
+
+@jax.jit
+def jit_row_delete(x, i):
+    """
+    Jitted row delete function
+    -------
+    Parameters
+    ----------
+    x : jax.numpy.array
+
+    21D array
+
+    i : jax.numpy.array
+
+        Indexes to delete
+
+    Returns
+    -------
+    jax.numpy.array
+    """
+    return jnp.delete(x,i,0,assume_unique_indices = True)
 
 #Sample neighbor
 def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
@@ -772,6 +821,7 @@ def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key,n
     key = jax.random.split(jax.random.PRNGKey(key),10)
 
     #Sample interval
+    t0 = time.time()
     which_interval = get_interval(point_break[:,:-num_classes],intervals)
     new_interval,break_interval = sample_break_interval(point_break[:,:-num_classes],intervals,which_interval,tab_train[:,:-num_classes],key[0,0])
     if new_interval is None:
@@ -782,14 +832,16 @@ def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key,n
     index_interval = jnp.where(which_interval)[0]
     b_break = block[index_interval]
 
+
     #Compute interval cover of complement
     where_fill = jnp.where((new_interval != -1.0)*(break_interval == -1.0))[1]
     where_fill = jax.random.permutation(jax.random.PRNGKey(key[1,0]), where_fill)
     cover_intervals = cover_break_interval(new_interval,where_fill)
 
     #Divide into two blocks
+    t1 = time.time()
     division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0] - 2,),replace = True))
-    division_old = jax.random.choice(jax.random.PRNGKey(key[3,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (jnp.sum(block == b_break) - 1,),replace = True)
+    division_old = jax.random.choice(jax.random.PRNGKey(key[3,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (block.shape[0] - 1,),replace = True)
 
     #Update partition
     intervals,block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
@@ -854,12 +906,13 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key,num_class
     key = jax.random.split(jax.random.PRNGKey(key),10)
 
     #Delete intervals and block united
-    which_intervals = jnp.where((block == unite[0]) + (block == unite[1]) > 0)[0]
+    which_intervals = jnp.where(jnp.logical_or(block == unite[0],block == unite[1]))[0]
     unite_intervals = intervals[which_intervals,:]
-    intervals = jnp.delete(intervals,which_intervals,0)
-    block = jnp.delete(block,which_intervals)
+    intervals = jit_row_delete(intervals,which_intervals)
+    block = jit_delete(block,which_intervals)
 
     #Try to reduce united intervals
+    t0 = time.time()
     reduced = False
     while(not reduced):
         unite_intervals,reduced = reduce(unite_intervals)
@@ -867,7 +920,8 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key,num_class
     #Update intervals and block
     intervals = jnp.append(intervals,unite_intervals,0)
     block = jnp.append(block,jnp.repeat(jnp.min(unite),unite_intervals.shape[0]))
-    block = block.at[jnp.where(block > jnp.max(unite))].set(block[jnp.where(block > jnp.max(unite))] - 1)
+    block = jnp.where(block > jnp.max(unite),block - 1,block)
+
     #Compute error
     error = error_partition(tab_train,tab_val,intervals,block,nval,key[0,0],num_classes)
 
@@ -925,12 +979,12 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,key,num_cl
     jax.numpy.arrays of intervals and block and/or the error of the sampled partition
     """
     #Seed
+    t0 = time.time()
     key = jax.random.split(jax.random.PRNGKey(key),10)
 
     #Test if can be dismenbered (get number of elements in each interval)
-    occupied = jnp.sum(jax.vmap(lambda interval: get_elements_interval(interval,tab_train[:,:-2]))(intervals[block == b_dis,:]),1) > 0
+    occupied = jnp.sum(get_elements_each_interval(intervals[block == b_dis,:],tab_train[:,:-num_classes]),1) > 0
     if jnp.sum(occupied) < 2:
-        #print('Invalid!')
         return {'block': block,'intervals': intervals,'error': 1.1}
 
     #How to dismenber
@@ -944,7 +998,6 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,key,num_cl
 
     #Compute error
     error = error_partition(tab_train,tab_val,intervals,block,nval,key[3,0],num_classes)
-
     #Return
     if not step:
         return error

@@ -155,7 +155,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 small = jnp.array(math.comb(jnp.max(block) + 1,2)) #Number of ways of uniting blocks
                 dismenber = jnp.power(jnp.bincount(block) - 1,2) - 1 #Number of ways of dimenbering
                 #breakInt = ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes]) #Flag intervals that are limit of intervals
-                prob = jnp.append(jnp.append(small,jnp.sum(dismenber)),(small + dismenber + 2)) #Probability of uniting, diemenbering and breaking interval al internal point
+                prob = jnp.append(jnp.append(small,jnp.sum(dismenber)),tab_train_batch.shape[0]) #Probability of uniting, diemenbering and breaking interval al internal point
                 what_nei = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array([0,1,2]),shape=(sample,),p = prob) #Sample kind of step to take at each sample neighbor
                 k = k + 1 #Update seed
 
