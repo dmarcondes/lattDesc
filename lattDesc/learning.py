@@ -236,7 +236,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time}
 
 #Stochastic ISI algorithm
-def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique = False):
+def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None):
     """
     Stochastic Incremental Splitting of Intervals (ISI) algorithm
      -------
@@ -265,6 +265,14 @@ def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique =
     unique : logical
 
         Whether the data is unique, i.e., each input point appears only once in the data
+
+    intervals : jax.numpy.array
+
+        Array of initial intervals. If None then initialize with the unitary partition
+
+    block : jax.numpy.array
+
+        Array with the blocks of the initial intervals. If None then initialize with the unitary partition
 
     Returns
     -------
@@ -296,13 +304,14 @@ def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique =
     label = jnp.sum(jax.vmap(lambda x: jnp.where(x == 1,jnp.arange(num_classes),0))(label),1)
 
     #Initialize interval
-    intervals = -1 + jnp.zeros((1,d)) #Array with intervals
-    block = jnp.array([0]) #Array with block of each interval
+    if intervals is None or block is None:
+        intervals = -1 + jnp.zeros((1,d)) #Array with intervals
+        block = jnp.array([0]) #Array with block of each interval
 
     #Probability of each point
     t0 = time.time()
     freq = jax.vmap(lambda interval: ut.frequency_labels_interval(interval,tab[:,:-num_classes],label,num_classes))(intervals)
-    prob = jnp.where(jnp.min(freq,1) > 0,1,0)
+    prob = jnp.where((freq[:,class_break] > 0)*(jnp.max(jnp.delete(freq,class_break,1),1) > 0),1,0)
     prob = jnp.sum(jax.vmap(lambda point: jnp.where(ut.get_interval(point,intervals),prob,0))(tab[:,:-num_classes]),1)
     prob = jnp.where(label != class_break,0,prob)
     limit = ut.get_limits_some_interval(intervals,tab[:,:-num_classes])
@@ -322,7 +331,7 @@ def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique =
             k = k + 1 #Update seed
             #Update probabilities
             freq = jax.vmap(lambda interval: ut.frequency_labels_interval(interval,tab[:,:-num_classes],label,num_classes))(intervals)
-            prob = jnp.where(jnp.min(freq,1) > 0,1,0)
+            prob = jnp.where((freq[:,class_break] > 0)*(jnp.max(jnp.delete(freq,class_break,1),1) > 0),1,0)
             prob = jnp.sum(jax.vmap(lambda point: jnp.where(ut.get_interval(point,intervals),prob,0))(tab[:,:-num_classes]),1)
             prob = jnp.where(label != class_break,0,prob)
             limit = ut.get_limits_some_interval(intervals,tab[:,:-num_classes])
