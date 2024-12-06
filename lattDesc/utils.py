@@ -529,7 +529,6 @@ def error_partition(tab_train,tab_val,intervals,block,nval,key,num_classes = 2):
     return error
 
 #Break interval at new interval
-@jax.jit
 def cover_break_interval(new_interval,where_fill):
     """
     Compute a cover of [A,B]/[A,X] or [A,B]/[X,B] by intervals
@@ -641,7 +640,7 @@ def count_points(intervals):
     -------
     jax.numpy.array
     """
-    return jax.vmap(lambda interval: jnp.power(2,jnp.sum(interval == -1)) - 2)(intervals)
+    return jax.vmap(lambda interval: jnp.sum(interval == -1) - 1)(intervals)
 
 #Sample interval
 def sample_break_interval(break_interval,key):
@@ -1007,7 +1006,7 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,key,num_cl
     division_new = np.random.permutation(np.append(np.append(b_dis,max_block),np.random.choice(np.append(b_dis,max_block),size = (np.sum(block == b_dis) - 2,),replace = True)))
 
     #Update block
-    block = block.at[block == b_dis].set(division_new)
+    block[block == b_dis] = division_new
 
     #Compute error
     error = error_partition(tab_train,tab_val,intervals,block,nval,key[3,0],num_classes)

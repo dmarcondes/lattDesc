@@ -164,6 +164,8 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 what_nei = np.random.choice(np.array([0,1,2]),size=(sample,),p = prob/np.sum(prob)) #Sample kind of step to take at each sample neighbor
                 k = k + 1 #Update seed
                 break_int = break_int/np.sum(break_int)
+                if jnp.sum(dismenber) > 0:
+                    dismenber = dismenber/np.sum(dismenber)
                 #break_int[-1] = 1 - jnp.sum(break_int[:-1])
 
                 #Objects to store neighbors
@@ -178,7 +180,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Sample intervals to unite in the sampled block and store the result
-                        store_nei.append(ut.unite_blocks(unite,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
+                        store_nei.append(ut.unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
@@ -189,7 +191,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_block(b_dis,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
+                        store_nei.append(ut.dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
@@ -200,7 +202,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         k = k + 1 #Update seed
 
                         #Break interval on sampled point and store the result
-                        store_nei.append(ut.break_interval(interval_break,intervals[interval_break,:],block[interval_break],intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
+                        store_nei.append(ut.break_interval(interval_break,intervals[interval_break,:].copy(),block[interval_break].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error
