@@ -67,34 +67,38 @@ def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,u
     -------
         jax.numpy.arrays of tab_train_batch and tab_val_batch and the batch validation sample size bnval
     """
-    if b < batches - 1: #If it is not last batch
-        if unique: #If data is unique, batch of frequency table
-            tab_train_batch = tab_train[(b*bsize):((b+1)*bsize),:] #Get frequency table of batch
-        else: #Else, compute frequency table of data batch
-            tab_train_batch = dt.get_ftable(train[(b*bsize):((b+1)*bsize),:],unique,num_classes) #Compute frequency table of batch
-    else: #For the last batch
-        if unique: #If data is unique, batch of frequency table
-            tab_train_batch = tab_train[(b*bsize):,:] #Get frequency table of batch
-        else: #Else, compute frequency table of data batch
-            tab_train_batch = dt.get_ftable(train[(b*bsize):,:],unique,num_classes) #Compute frequency table of batch
-    if batch_val: #If batches for validation should be considered
+    if batches > 1:
         if b < batches - 1: #If it is not last batch
             if unique: #If data is unique, batch of frequency table
-                tab_val_batch = tab_val[(b*bsize_val):((b+1)*bsize_val),:] #Get frequency table of batch
+                tab_train_batch = tab_train[(b*bsize):((b+1)*bsize),:] #Get frequency table of batch
             else: #Else, compute frequency table of data batch
-                tab_val_batch = dt.get_ftable(val[(b*bsize_val):((b+1)*bsize_val),:],unique,num_classes) #Compute frequency table of batch
+                tab_train_batch = dt.get_ftable(train[(b*bsize):((b+1)*bsize),:],unique,num_classes) #Compute frequency table of batch
         else: #For the last batch
             if unique: #If data is unique, batch of frequency table
-                tab_val_batch = tab_val[(b*bsize_val):,:] #Get frequency table of batch
+                tab_train_batch = tab_train[(b*bsize):,:] #Get frequency table of batch
             else: #Else, compute frequency table of data batch
-                tab_val_batch = dt.get_ftable(val[(b*bsize_val):,:],unique,num_classes) #Compute frequency table of batch
-        bnval = jnp.sum(tab_val_batch[:,-num_classes:])
-    else: #No batch for validation
-        tab_val_batch = tab_val #Copy frequency table
-        bnval = nval #Copy validation sample size
-    return tab_train_batch,tab_val_batch,bnval
+                tab_train_batch = dt.get_ftable(train[(b*bsize):,:],unique,num_classes) #Compute frequency table of batch
+        if batch_val: #If batches for validation should be considered
+            if b < batches - 1: #If it is not last batch
+                if unique: #If data is unique, batch of frequency table
+                    tab_val_batch = tab_val[(b*bsize_val):((b+1)*bsize_val),:] #Get frequency table of batch
+                else: #Else, compute frequency table of data batch
+                    tab_val_batch = dt.get_ftable(val[(b*bsize_val):((b+1)*bsize_val),:],unique,num_classes) #Compute frequency table of batch
+            else: #For the last batch
+                if unique: #If data is unique, batch of frequency table
+                    tab_val_batch = tab_val[(b*bsize_val):,:] #Get frequency table of batch
+                else: #Else, compute frequency table of data batch
+                    tab_val_batch = dt.get_ftable(val[(b*bsize_val):,:],unique,num_classes) #Compute frequency table of batch
+            bnval = np.sum(tab_val_batch[:,-num_classes:])
+        else: #No batch for validation
+            tab_val_batch = tab_val #Copy frequency table
+            bnval = nval #Copy validation sample size
+        return tab_train_batch,tab_val_batch,bnval
+    else:
+        return tab_train,tab_val,nval
 
 #Teste partial order
+@jax.jit
 def partial_order(x,y):
     """
     Test if x <= y
@@ -257,7 +261,27 @@ def get_elements_interval(interval,data):
 #Get elements in each interval
 @jax.jit
 def get_elements_each_interval(intervals,data):
-     return jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals)
+    """
+    Flag the elements in dataset that are in each interval
+    -------
+
+    Parameters
+    ----------
+    intervals : jax.numpy.array
+
+        Intervals
+
+    data : jax.numpy.array
+
+        Dataset
+
+    Returns
+    -------
+
+    jax.numpy.array of logical
+
+    """
+    return jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals)
 
 #Get elements in some interval
 @jax.jit
@@ -387,11 +411,11 @@ def estimate_label_partition(tab_train,intervals,block,num_classes = 2,key = 0):
     -------
     jax.numpy.array
     """
-    pred = jnp.zeros((intervals.shape[0],))
-    for i in range(jnp.max(block) + 1):
+    pred = np.zeros((intervals.shape[0],))
+    for i in range(np.max(block) + 1):
         tmp_intervals = intervals[block == i,:]
         pred_block = estimate_label_block(tab_train,tmp_intervals,num_classes,key)
-        pred = jnp.where(block == i,pred_block,pred)
+        pred = np.where(block == i,pred_block,pred)
     return pred
 
 #Get estimated function
@@ -497,7 +521,7 @@ def error_partition(tab_train,tab_val,intervals,block,nval,key,num_classes = 2):
     float
     """
     error = 0
-    for i in range(jnp.max(block) + 1):
+    for i in range(np.max(block) + 1):
         tmp_intervals = intervals[block == i,:]
         tab_train_block = ftable_block(tmp_intervals,tab_train,num_classes)
         tab_val_block = ftable_block(tmp_intervals,tab_val,num_classes)
@@ -556,7 +580,7 @@ def sample_sup(point,interval):
     -------
     jax.numpy.array
     """
-    return jnp.where((interval == -1.0)*(point == 1.0),-1.0,point)
+    return jnp.where(jax.numpy.logical_and(interval == -1.0,point == 1.0),-1.0,point)
 
 #Get interval as inf
 @jax.jit
@@ -578,9 +602,9 @@ def sample_inf(point,interval):
     -------
     jax.numpy.array
     """
-    return jnp.where((interval == -1.0)*(point == 0.0),-1.0,point)
+    return jnp.where(jax.numpy.logical_and(interval == -1.0,point == 0.0),-1.0,point)
 
-#Flag intervals that contain point
+#Flag interval that contain point
 @jax.jit
 def get_interval(point,intervals):
     """
@@ -602,20 +626,33 @@ def get_interval(point,intervals):
     """
     return jax.vmap(lambda interval: test_interval(interval,point))(intervals)
 
+#Count the internal points in each interval
+@jax.jit
+def count_points(intervals):
+    """
+    Count internal points in each interval
+    -------
+    Parameters
+    ----------
+    intervals : jax.numpy.array
+
+        Intervals
+    Returns
+    -------
+    jax.numpy.array
+    """
+    return jax.vmap(lambda interval: jnp.power(2,jnp.sum(interval == -1)) - 2)(intervals)
+
 #Sample interval
-def sample_break_interval(index_interval,intervals,key):
+def sample_break_interval(break_interval,key):
     """
     Sample a break of an interval
     -------
     Parameters
     ----------
-    index_interval : jax.numpy.array
+    break_interval : jax.numpy.array
 
-        Index of interval to break
-
-    intervals : jax.numpy.array
-
-        Intervals
+        Which interval to break
 
     key : int
 
@@ -625,20 +662,19 @@ def sample_break_interval(index_interval,intervals,key):
     -------
     jax.numpy.array
     """
-    #Get interval to break on
-    break_interval = intervals[index_interval,:]
-    #Break inf or sup
-    new_interval = jnp.where(break_interval == -1,jax.random.choice(jax.random.PRNGKey(key), jnp.array([0,1]),shape = (1,break_interval.shape[1])),break_interval)
+    #Sample point in interval to break on
+    new_interval = np.where(break_interval == -1,np.random.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
     k = 1
     while test_limit_interval(break_interval,new_interval):
-        new_interval = jnp.where(break_interval == -1,jax.random.choice(jax.random.PRNGKey(key + k), jnp.array([0,1]),shape = (1,break_interval.shape[1])),break_interval)
+        new_interval = np.where(break_interval == -1,np.random.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
         k = k + 1
-    inf_sup = jax.random.choice(jax.random.PRNGKey(key + k), jnp.array([0,1]),shape=(1,))
+    #Break inf or sup
+    inf_sup = np.random.choice(np.array([0,1]),size=(1,))
     if inf_sup == 0:
         new_interval = sample_inf(new_interval,break_interval)
     else:
         new_interval = sample_sup(new_interval,break_interval)
-    return new_interval,break_interval
+    return new_interval
 
 #Update partition
 def update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new):
@@ -679,14 +715,16 @@ def update_partition(b_break,intervals,cover_intervals,block,index_interval,divi
     -------
     jax.numpy.arrays of intervals and block
     """
-    intervals = jnp.append(intervals,cover_intervals,0)
-    intervals = jit_row_delete(intervals,index_interval)
-    max_block = jnp.max(block)
-    block = jit_delete(block,index_interval)
-    block = jnp.where(block == b_break,division_old,block)
-    block = jnp.append(block,jnp.where(division_new == 0,b_break,max_block + 1))
+    intervals = np.array(intervals)
+    cover_intervals = np.array(cover_intervals)
+    block = np.array(block)
+    intervals = np.append(intervals,cover_intervals,0)
+    intervals = np.delete(intervals,index_interval,0)
+    max_block = np.max(block)
+    block = np.delete(block,index_interval)
+    block = np.where(block == b_break,division_old,block)
+    block = np.append(block,np.where(division_new == 0,b_break,max_block + 1))
     return intervals,block
-
 
 #One step reduction
 def reduce(intervals):
@@ -703,13 +741,14 @@ def reduce(intervals):
     -------
     jax.numpy.array of intervals and logical indicating whether the returned intervals are reduced
     """
+    intervals = np.array(intervals)
     for i in range(intervals.shape[0] - 1):
         for j in range(i + 1,intervals.shape[0]):
-            if (jnp.where(intervals[i,:] == -1,1,0) == jnp.where(intervals[j,:] == -1,1,0)).all():
-                if jnp.sum(intervals[i,:] != intervals[j,:]) == 1:
-                    united = jnp.where(intervals[i,:] != intervals[j,:],-1.0,intervals[i,:])
-                    intervals = jnp.delete(intervals,jnp.array([i,j]),0)
-                    intervals = jnp.append(intervals,united.reshape((1,united.shape[0])),0)
+            if (np.where(intervals[i,:] == -1,1,0) == np.where(intervals[j,:] == -1,1,0)).all():
+                if np.sum(intervals[i,:] != intervals[j,:]) == 1:
+                    united = np.where(intervals[i,:] != intervals[j,:],-1.0,intervals[i,:])
+                    intervals = np.delete(intervals,np.array([i,j]),0)
+                    intervals = np.append(intervals,united.reshape((1,united.shape[0])),0)
                     return intervals,False
     return intervals,True
 
@@ -757,7 +796,7 @@ def jit_row_delete(x, i):
     return jnp.delete(x,i,0,assume_unique_indices = True)
 
 #Sample neighbor
-def break_interval(index_interval,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
+def break_interval(index_interval,break_interval,b_break,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
     """
     Break an interval randomly to sample a neighbor
     -------
@@ -766,6 +805,14 @@ def break_interval(index_interval,intervals,block,nval,tab_train,tab_val,step,ke
     index_interval : jax.numpy.array
 
         Index of interval to break
+
+    break_interval : jax.numpy.array
+
+        Interval to break
+
+    b_break : jax.numpy.array
+
+        Block which contains the break interval
 
     intervals : jax.numpy.array
 
@@ -807,19 +854,16 @@ def break_interval(index_interval,intervals,block,nval,tab_train,tab_val,step,ke
     key = jax.random.split(jax.random.PRNGKey(key),10)
 
     #Sample interval
-    t0 = time.time()
-    new_interval,break_interval = sample_break_interval(index_interval,intervals,key[0,0])
-    b_break = block[index_interval]
+    new_interval = sample_break_interval(break_interval,key[0,0])
 
     #Compute interval cover of complement
-    where_fill = jnp.where((new_interval != -1.0)*(break_interval == -1.0))[1]
-    where_fill = jax.random.permutation(jax.random.PRNGKey(key[1,0]), where_fill)
+    where_fill = np.where(np.logical_and(new_interval != -1.0,break_interval == -1.0))[1]
+    where_fill = np.random.permutation(where_fill)
     cover_intervals = cover_break_interval(new_interval,where_fill)
 
     #Divide into two blocks
-    t1 = time.time()
-    division_new = jnp.append(jnp.array([1,0]),jax.random.choice(jax.random.PRNGKey(key[2,0]), jnp.array([0,1]),shape = (cover_intervals.shape[0] - 2,),replace = True))
-    division_old = jax.random.choice(jax.random.PRNGKey(key[3,0]), jnp.append(b_break,jnp.max(block) + 1),shape = (block.shape[0] - 1,),replace = True)
+    division_new = np.append(np.array([1,0]),np.random.choice(jnp.array([0,1]),size = (cover_intervals.shape[0] - 2,),replace = True))
+    division_old = np.random.choice(np.append(b_break,np.max(block) + 1),size = (block.shape[0] - 1,),replace = True)
 
     #Update partition
     intervals,block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
@@ -884,21 +928,20 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key,num_class
     key = jax.random.split(jax.random.PRNGKey(key),10)
 
     #Delete intervals and block united
-    which_intervals = jnp.where(jnp.logical_or(block == unite[0],block == unite[1]))[0]
+    which_intervals = np.where(np.logical_or(block == unite[0],block == unite[1]))[0]
     unite_intervals = intervals[which_intervals,:]
     intervals = jit_row_delete(intervals,which_intervals)
     block = jit_delete(block,which_intervals)
 
     #Try to reduce united intervals
-    t0 = time.time()
     reduced = False
     while(not reduced):
         unite_intervals,reduced = reduce(unite_intervals)
 
     #Update intervals and block
-    intervals = jnp.append(intervals,unite_intervals,0)
-    block = jnp.append(block,jnp.repeat(jnp.min(unite),unite_intervals.shape[0]))
-    block = jnp.where(block > jnp.max(unite),block - 1,block)
+    intervals = np.append(intervals,unite_intervals,0)
+    block = np.append(block,np.repeat(np.min(unite),unite_intervals.shape[0]))
+    block = np.where(block > np.max(unite),block - 1,block)
 
     #Compute error
     error = error_partition(tab_train,tab_val,intervals,block,nval,key[0,0],num_classes)
@@ -957,19 +1000,11 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,key,num_cl
     jax.numpy.arrays of intervals and block and/or the error of the sampled partition
     """
     #Seed
-    t0 = time.time()
     key = jax.random.split(jax.random.PRNGKey(key),10)
 
-    #Test if can be dismenbered (get number of elements in each interval)
-    occupied = jnp.sum(get_elements_each_interval(intervals[block == b_dis,:],tab_train[:,:-num_classes]),1) > 0
-    if jnp.sum(occupied) < 2:
-        return {'block': block,'intervals': intervals,'error': 1.1}
-
     #How to dismenber
-    max_block = jnp.max(block) + 1
-    sample_div_occupied = np.append(jnp.append(b_dis,max_block),jax.random.choice(jax.random.PRNGKey(key[0,0]), jnp.append(b_dis,max_block),shape = (jnp.sum(block == b_dis) - 2,),replace = True))
-    sample_div_empty = jax.random.choice(jax.random.PRNGKey(key[1,0]), jnp.append(b_dis,max_block),shape = (jnp.sum(block == b_dis),),replace = True)
-    division_new = jnp.where(occupied,sample_div_occupied,sample_div_empty)
+    max_block = np.max(block) + 1
+    division_new = np.random.permutation(np.append(np.append(b_dis,max_block),np.random.choice(np.append(b_dis,max_block),size = (np.sum(block == b_dis) - 2,),replace = True)))
 
     #Update block
     block = block.at[block == b_dis].set(division_new)
@@ -984,6 +1019,6 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,key,num_cl
 
 #Frequency of labels of points in a interval
 def frequency_labels_interval(interval,data,labels,num_classes = 2):
-    return jnp.bincount(jnp.where(get_elements_interval(interval,data),labels,num_classes),length = num_classes + 1)[:-1]
+    return np.bincount(np.where(get_elements_interval(interval,data),labels,num_classes),length = num_classes + 1)[:-1]
 
 frequency_labels_interval = jax.jit(frequency_labels_interval,static_argnames = ['num_classes'])
