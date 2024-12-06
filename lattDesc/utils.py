@@ -603,17 +603,17 @@ def get_interval(point,intervals):
     return jax.vmap(lambda interval: test_interval(interval,point))(intervals)
 
 #Sample interval
-def sample_break_interval(point,intervals,which_interval,domain,key):
+def sample_break_interval(index_interval,intervals,key):
     """
-    Sample interval to break at a given point
+    Sample a break of an interval
     -------
     Parameters
     ----------
-    point : jax.numpy.array
+    index_interval : jax.numpy.array
 
-        Point
+        Index of interval to break
 
-    interval : jax.numpy.array
+    intervals : jax.numpy.array
 
         Intervals
 
@@ -626,33 +626,19 @@ def sample_break_interval(point,intervals,which_interval,domain,key):
     jax.numpy.array
     """
     #Get interval to break on
-    break_interval = intervals[which_interval,:]
-    if test_limit_interval(break_interval,point):
-        if jnp.sum(break_interval == -1) == 1:
-            return None,None
-        points_interval = domain[get_limits_some_interval(break_interval,domain),:]
-        points_interval = jit_row_delete(points_interval,jnp.where(get_limits_some_interval(break_interval,points_interval))[0])
-        if points_interval.shape[0] == 0:
-            value = jnp.append(jnp.arange(2),jax.random.choice(jax.random.PRNGKey(key+1),jnp.arange(2),shape = (1,jnp.sum(break_interval == -1) - 2)))
-            value = jax.random.permutation(jax.random.PRNGKey(key + 2),value,0)
-            value = jnp.zeros((1,break_interval.shape[1])).at[jnp.where(break_interval == -1)].set(value)
-            new_interval = break_interval.at[0,:].set(jnp.where(break_interval == -1,value,break_interval)[0,:])
-        else:
-            new_interval = points_interval[jax.random.choice(jax.random.PRNGKey(key), jnp.arange(points_interval.shape[0]),shape=(1,)),:]
-        if partial_order(new_interval,point):
-            new_interval = sample_sup(new_interval,break_interval)
-        else:
-            new_interval = sample_inf(new_interval,break_interval)
-        return new_interval,break_interval
+    break_interval = intervals[index_interval,:]
+    #Break inf or sup
+    new_interval = jnp.where(break_interval == -1,jax.random.choice(jax.random.PRNGKey(key), jnp.array([0,1]),shape = (1,break_interval.shape[1])),break_interval)
+    k = 1
+    while test_limit_interval(break_interval,new_interval):
+        new_interval = jnp.where(break_interval == -1,jax.random.choice(jax.random.PRNGKey(key + k), jnp.array([0,1]),shape = (1,break_interval.shape[1])),break_interval)
+        k = k + 1
+    inf_sup = jax.random.choice(jax.random.PRNGKey(key + k), jnp.array([0,1]),shape=(1,))
+    if inf_sup == 0:
+        new_interval = sample_inf(new_interval,break_interval)
     else:
-        #Break inf or sup
-        new_interval = point
-        inf_sup = jax.random.choice(jax.random.PRNGKey(key), jnp.array([0,1]),shape=(1,))
-        if inf_sup == 0:
-            new_interval = sample_inf(new_interval,break_interval)
-        else:
-            new_interval = sample_sup(new_interval,break_interval)
-        return new_interval,break_interval
+        new_interval = sample_sup(new_interval,break_interval)
+    return new_interval,break_interval
 
 #Update partition
 def update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new):
@@ -771,15 +757,15 @@ def jit_row_delete(x, i):
     return jnp.delete(x,i,0,assume_unique_indices = True)
 
 #Sample neighbor
-def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
+def break_interval(index_interval,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
     """
     Break an interval randomly to sample a neighbor
     -------
     Parameters
     ----------
-    point_break : jax.numpy.array
+    index_interval : jax.numpy.array
 
-        Which point to break on
+        Index of interval to break
 
     intervals : jax.numpy.array
 
@@ -822,16 +808,8 @@ def break_interval(point_break,intervals,block,nval,tab_train,tab_val,step,key,n
 
     #Sample interval
     t0 = time.time()
-    which_interval = get_interval(point_break[:,:-num_classes],intervals)
-    new_interval,break_interval = sample_break_interval(point_break[:,:-num_classes],intervals,which_interval,tab_train[:,:-num_classes],key[0,0])
-    if new_interval is None:
-        if not step:
-            return 1.1
-        else:
-            return {'block': block,'intervals': intervals,'error': 1.1}
-    index_interval = jnp.where(which_interval)[0]
+    new_interval,break_interval = sample_break_interval(index_interval,intervals,key[0,0])
     b_break = block[index_interval]
-
 
     #Compute interval cover of complement
     where_fill = jnp.where((new_interval != -1.0)*(break_interval == -1.0))[1]

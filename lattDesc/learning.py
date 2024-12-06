@@ -154,8 +154,8 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 #Compute probabilities
                 small = jnp.array(math.comb(jnp.max(block) + 1,2)) #Number of ways of uniting blocks
                 dismenber = jnp.power(jnp.bincount(block) - 1,2) - 1 #Number of ways of dimenbering
-                #breakInt = ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes]) #Flag intervals that are limit of intervals
-                prob = jnp.append(jnp.append(small,jnp.sum(dismenber)),tab_train_batch.shape[0]) #Probability of uniting, diemenbering and breaking interval al internal point
+                break_int = jax.vmap(lambda interval: jnp.sum(interval == -1))(intervals)
+                prob = jnp.append(jnp.append(small,jnp.sum(dismenber)),jnp.sum(break_int > 1)) #Probability of uniting, diemenbering and breaking interval al internal point
                 what_nei = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array([0,1,2]),shape=(sample,),p = prob) #Sample kind of step to take at each sample neighbor
                 k = k + 1 #Update seed
 
@@ -188,12 +188,12 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         #Store error
                         error_batch = jnp.append(error_batch,store_nei[-1]['error'])
                     elif what_nei[n] == 2: #Break interval
-                        #Sample point to break an interval of the sampled block on
-                        point_break = tab_train_batch[jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.array(list(range(tab_train_batch.shape[0]))),shape=(1,)),:]
+                        #Sample interval to break
+                        interval_break = jax.random.choice(jax.random.PRNGKey(key[k,0]), jnp.arange(intervals.shape[0]),shape=(1,),p = jnp.where(break_int == 1,0,break_int))
                         k = k + 1 #Update seed
 
                         #Break interval on sampled point and store the result
-                        store_nei.append(ut.break_interval(point_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
+                        store_nei.append(ut.break_interval(interval_break,intervals,block,bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
                         k = k + 1 #Update seed
 
                         #Store error

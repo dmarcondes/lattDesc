@@ -1,5 +1,0 @@
-IPython
-Pillow
-alive_progress
-jax
-plotly
