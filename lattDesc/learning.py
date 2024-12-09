@@ -11,7 +11,7 @@ from alive_progress import alive_bar
 import os
 
 #Stochastic Descent on the Boolean Interval Partition Lattice
-def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
+def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
     """
     Stochastic Lattice Descent Algorithm in the Boolean Interval Partition Lattice
     -------
@@ -32,6 +32,10 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     sample : int
 
         Number of neighbors to sample at each step
+
+    projection = logical
+
+        Whether to search a projection of the lattice on the data (True) or the whole lattice
 
     batches : int
 
@@ -101,6 +105,11 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     if test is not None: #Get test table if there is test data
         tab_test = dt.get_ftable(test,unique,num_classes)
 
+    #Projection
+    if not projection and d > 25:
+        projection = True
+        print('\n Warning: Projection is being forced since d > 25 variables \n')
+
     #Batches Size
     if unique: #If data is unique, batches of frequency table
         bsize = math.floor(tab_train.shape[0]/batches) #Batch size for training
@@ -153,7 +162,10 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 small = np.array(math.comb(np.max(block) + 1,2)) #Number of ways of uniting blocks
                 dismenber = np.power(np.bincount(block) - 1,2) - 1 #Number of ways of dimenbering
                 dismenber = np.where(dismenber == -1,0,dismenber)
-                break_int = np.array(ut.count_points(intervals))
+                if projection:
+                    break_int = np.array(1 - ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes]))
+                else:
+                    break_int = np.array(ut.count_points(intervals))
                 prob = np.append(np.append(small,np.sum(dismenber)),np.sum(break_int)) #Probability of uniting, diemenbering and breaking interval al internal point
                 what_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob/np.sum(prob)) #Sample kind of step to take at each sample neighbor
                 break_int = break_int/np.sum(break_int)
@@ -185,11 +197,17 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                         #Store error
                         error_batch = np.append(error_batch,store_nei[-1]['error'])
                     elif what_nei[n] == 2: #Break interval
-                        #Sample interval to break
-                        interval_break = rng.choice(np.arange(intervals.shape[0]),size=(1,),p = break_int)
+                        if projection:
+                            #Sample point to break on
+                            point_break = tab_train_batch[rng.choice(np.arange(tab_train_batch.shape[0]),size = (1,),p = break_int),:-num_classes]
+                            interval_break = np.where(ut.get_interval(point_break,intervals))[0]
+                        else:
+                            #Sample interval to break
+                            interval_break = rng.choice(np.arange(intervals.shape[0]),size=(1,),p = break_int)
+                            point_break = None
 
                         #Break interval on sampled point and store the result
-                        store_nei.append(ut.break_interval(interval_break,intervals[interval_break,:].copy(),block[interval_break].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
+                        store_nei.append(ut.break_interval(point_break,interval_break,intervals[interval_break,:].copy(),block[interval_break].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
 
                         #Store error
                         error_batch = np.append(error_batch,store_nei[-1]['error'])
@@ -219,7 +237,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     #Test error
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
-        test_error = ut.error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
+        test_error = ut.error_partition(tab_train,tab_test,intervals,block,test.shape[0],int(rng.choice(np.arange(1e6))),num_classes)
 
     #Create video
     if video:

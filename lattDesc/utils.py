@@ -518,7 +518,7 @@ def error_partition(tab_train,tab_val,intervals,block,nval,key,num_classes = 2):
     float
     """
     error = 0
-    for i in range(np.max(block) + 1):
+    for i in range(jnp.max(block) + 1):
         tmp_intervals = intervals[block == i,:]
         tab_train_block = ftable_block(tmp_intervals,tab_train,num_classes)
         tab_val_block = ftable_block(tmp_intervals,tab_val,num_classes)
@@ -546,18 +546,17 @@ def cover_break_interval(new_interval,where_fill):
     """
     cover_intervals = None
     for i in range(len(where_fill)):
-        tmp = new_interval
-        tmp = tmp.at[0,where_fill[i]].set(1 - tmp[0,where_fill[i]])
-        tmp = tmp.at[0,where_fill[(i+1):]].set(-1)
+        tmp = new_interval.copy()
+        tmp[0,where_fill[i]] = 1 - tmp[0,where_fill[i]]
+        tmp[0,where_fill[(i+1):]] = -1
         if cover_intervals is None:
             cover_intervals = tmp
         else:
-            cover_intervals = jnp.append(cover_intervals,tmp,0)
-    cover_intervals = jnp.append(cover_intervals,new_interval,0)
+            cover_intervals = np.append(cover_intervals,tmp,0)
+    cover_intervals = np.append(cover_intervals,new_interval,0)
     return cover_intervals
 
 #Get interval as sup
-@jax.jit
 def sample_sup(point,interval):
     """
     Get interval [A,X] given interval [A,B] and point X in [A,B]
@@ -576,10 +575,9 @@ def sample_sup(point,interval):
     -------
     jax.numpy.array
     """
-    return jnp.where(jax.numpy.logical_and(interval == -1.0,point == 1.0),-1.0,point)
+    return np.where(np.logical_and(interval == -1.0,point == 1.0),-1.0,point)
 
 #Get interval as inf
-@jax.jit
 def sample_inf(point,interval):
     """
     Get interval [X,B] given interval [A,B] and point X in [A,B]
@@ -598,7 +596,7 @@ def sample_inf(point,interval):
     -------
     jax.numpy.array
     """
-    return jnp.where(jax.numpy.logical_and(interval == -1.0,point == 0.0),-1.0,point)
+    return np.where(np.logical_and(interval == -1.0,point == 0.0),-1.0,point)
 
 #Flag interval that contain point
 @jax.jit
@@ -640,12 +638,16 @@ def count_points(intervals):
     return jax.vmap(lambda interval: jnp.power(2,jnp.sum(interval == -1) - 1))(intervals)
 
 #Sample interval
-def sample_break_interval(break_interval,key):
+def sample_break_interval(point_break,break_interval,key):
     """
     Sample a break of an interval
     -------
     Parameters
     ----------
+    point_break : jax.numpy.array
+
+        Point to break interval on
+
     break_interval : jax.numpy.array
 
         Which interval to break
@@ -661,9 +663,16 @@ def sample_break_interval(break_interval,key):
     rng = np.random.default_rng(seed = key)
 
     #Sample point in interval to break on
-    new_interval = np.where(break_interval == -1,rng.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
-    while test_limit_interval(break_interval,new_interval):
+    if point_break is not None:
+        new_interval = point_break
+    else:
         new_interval = np.where(break_interval == -1,rng.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
+        tries = 0
+        while test_limit_interval(break_interval,new_interval) and tries < 10:
+            new_interval = np.where(break_interval == -1,rng.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
+            tries = tries + 1
+        if tries == 10:
+            return None
     #Break inf or sup
     inf_sup = rng.choice(np.array([0,1]),size=(1,))
     if inf_sup == 0:
@@ -749,12 +758,16 @@ def reduce(intervals):
     return intervals,True
 
 #Sample neighbor
-def break_interval(index_interval,break_interval,b_break,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
+def break_interval(point_break,index_interval,break_interval,b_break,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
     """
     Break an interval randomly to sample a neighbor
     -------
     Parameters
     ----------
+    point_break : jax.numpy.array
+
+        Point to break interval on
+
     index_interval : jax.numpy.array
 
         Index of interval to break
@@ -807,12 +820,14 @@ def break_interval(index_interval,break_interval,b_break,intervals,block,nval,ta
     rng = np.random.default_rng(seed = key)
 
     #Sample interval
-    new_interval = sample_break_interval(break_interval,int(rng.choice(np.arange(1e6))))
+    new_interval = sample_break_interval(point_break,break_interval,int(rng.choice(np.arange(1e6))))
+    if new_interval is None:
+        return {'block': block,'intervals': intervals,'error': 1.1}
 
     #Compute interval cover of complement
     where_fill = np.where(np.logical_and(new_interval != -1.0,break_interval == -1.0))[1]
     where_fill = rng.permutation(where_fill)
-    cover_intervals = cover_break_interval(new_interval,where_fill)
+    cover_intervals = cover_break_interval(new_interval.copy(),where_fill)
 
     #Divide into two blocks
     division_new = np.append(np.array([1,0]),rng.choice(jnp.array([0,1]),size = (cover_intervals.shape[0] - 2,),replace = True))
