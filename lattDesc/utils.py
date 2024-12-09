@@ -637,7 +637,7 @@ def count_points(intervals):
     -------
     jax.numpy.array
     """
-    return jax.vmap(lambda interval: jnp.sum(interval == -1) - 1)(intervals)
+    return jax.vmap(lambda interval: jnp.power(2,jnp.sum(interval == -1) - 1))(intervals)
 
 #Sample interval
 def sample_break_interval(break_interval,key):
@@ -658,14 +658,14 @@ def sample_break_interval(break_interval,key):
     -------
     jax.numpy.array
     """
+    rng = np.random.default_rng(seed = key)
+
     #Sample point in interval to break on
-    new_interval = np.where(break_interval == -1,np.random.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
-    k = 1
+    new_interval = np.where(break_interval == -1,rng.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
     while test_limit_interval(break_interval,new_interval):
-        new_interval = np.where(break_interval == -1,np.random.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
-        k = k + 1
+        new_interval = np.where(break_interval == -1,rng.choice(np.array([0,1]),size = (1,break_interval.shape[1])),break_interval)
     #Break inf or sup
-    inf_sup = np.random.choice(np.array([0,1]),size=(1,))
+    inf_sup = rng.choice(np.array([0,1]),size=(1,))
     if inf_sup == 0:
         new_interval = sample_inf(new_interval,break_interval)
     else:
@@ -804,25 +804,25 @@ def break_interval(index_interval,break_interval,b_break,intervals,block,nval,ta
     jax.numpy.arrays of intervals and block and/or the error of the sampled partition
     """
     #Seed
-    key = jax.random.split(jax.random.PRNGKey(key),10)
+    rng = np.random.default_rng(seed = key)
 
     #Sample interval
-    new_interval = sample_break_interval(break_interval,key[0,0])
+    new_interval = sample_break_interval(break_interval,int(rng.choice(np.arange(1e6))))
 
     #Compute interval cover of complement
     where_fill = np.where(np.logical_and(new_interval != -1.0,break_interval == -1.0))[1]
-    where_fill = np.random.permutation(where_fill)
+    where_fill = rng.permutation(where_fill)
     cover_intervals = cover_break_interval(new_interval,where_fill)
 
     #Divide into two blocks
-    division_new = np.append(np.array([1,0]),np.random.choice(jnp.array([0,1]),size = (cover_intervals.shape[0] - 2,),replace = True))
-    division_old = np.random.choice(np.append(b_break,np.max(block) + 1),size = (block.shape[0] - 1,),replace = True)
+    division_new = np.append(np.array([1,0]),rng.choice(jnp.array([0,1]),size = (cover_intervals.shape[0] - 2,),replace = True))
+    division_old = rng.choice(np.append(b_break,np.max(block) + 1),size = (block.shape[0] - 1,),replace = True)
 
     #Update partition
     intervals,block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
 
     #Compute error
-    error = error_partition(tab_train,tab_val,intervals,block,nval,key[4,0],num_classes)
+    error = error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes)
 
     #Return
     if not step:
@@ -878,7 +878,7 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key,num_class
     jax.numpy.arrays of intervals and block and/or the error of the sampled partition
     """
     #Seed
-    key = jax.random.split(jax.random.PRNGKey(key),10)
+    rng = np.random.default_rng(seed = key)
 
     #Delete intervals and block united
     which_intervals = np.where(np.logical_or(block == unite[0],block == unite[1]))[0]
@@ -897,7 +897,7 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key,num_class
     block = np.where(block > np.max(unite),block - 1,block)
 
     #Compute error
-    error = error_partition(tab_train,tab_val,intervals,block,nval,key[0,0],num_classes)
+    error = error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes)
 
     #Return
     if not step:
@@ -953,17 +953,17 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,key,num_cl
     jax.numpy.arrays of intervals and block and/or the error of the sampled partition
     """
     #Seed
-    key = jax.random.split(jax.random.PRNGKey(key),10)
+    rng = np.random.default_rng(seed = key)
 
     #How to dismenber
     max_block = np.max(block) + 1
-    division_new = np.random.permutation(np.append(np.append(b_dis,max_block),np.random.choice(np.append(b_dis,max_block),size = (np.sum(block == b_dis) - 2,),replace = True)))
+    division_new = rng.permutation(np.append(np.append(b_dis,max_block),rng.choice(np.append(b_dis,max_block),size = (np.sum(block == b_dis) - 2,),replace = True)))
 
     #Update block
     block[block == b_dis] = division_new
 
     #Compute error
-    error = error_partition(tab_train,tab_val,intervals,block,nval,key[3,0],num_classes)
+    error = error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes)
     #Return
     if not step:
         return error

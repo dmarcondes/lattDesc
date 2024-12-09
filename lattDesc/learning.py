@@ -83,8 +83,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     """
     print('------Starting algorithm------')
     #Start seed
-    key = jax.random.split(jax.random.PRNGKey(key),10*epochs)
-    k = 0
+    rng = np.random.default_rng(seed = key)
 
     #If video, create dir to save images
     if video:
@@ -117,8 +116,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
         block = np.array([0]) #Array with block of each interval
 
     #Store error
-    current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,key[k,0],num_classes) #Get error
-    k = k + 1 #Update seed
+    current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes) #Get error
     best_error = current_error #Best error_batch
     best_intervals = intervals.copy() #Best intervals
     best_block = block.copy() #Best block
@@ -142,15 +140,11 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
         for e in range(epochs): #For each epoch
             if batches > 1: #If there should be training batches
                 if unique: #If data is unique, batches of frequency table
-                    tab_train = np.random.permutation(tab_train,0) #Random permutation of training table
-                    k = k + 1 #Update seed
-                    tab_val = np.random.permutation(tab_val,0) #Random permutation of validation table
-                    k = k + 1 #Update seed
+                    tab_train = rng.permutation(tab_train,0) #Random permutation of training table
+                    tab_val = rng.permutation(tab_val,0) #Random permutation of validation table
                 else: #Batches of data
-                    train = np.random.permutation(train,0) #Random permutation of training data
-                    k = k + 1 #Update seed
-                    val = np.random.permutation(val,0) #Random permutation of validation data
-                    k = k + 1 #Update seed
+                    train = rng.permutation(train,0) #Random permutation of training data
+                    val = rng.permutation(val,0) #Random permutation of validation data
             for b in range(batches): #For each batch
                 #Get frequency table of batch
                 tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes)
@@ -161,12 +155,10 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 dismenber = np.where(dismenber == -1,0,dismenber)
                 break_int = np.array(ut.count_points(intervals))
                 prob = np.append(np.append(small,np.sum(dismenber)),np.sum(break_int)) #Probability of uniting, diemenbering and breaking interval al internal point
-                what_nei = np.random.choice(np.array([0,1,2]),size=(sample,),p = prob/np.sum(prob)) #Sample kind of step to take at each sample neighbor
-                k = k + 1 #Update seed
+                what_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob/np.sum(prob)) #Sample kind of step to take at each sample neighbor
                 break_int = break_int/np.sum(break_int)
                 if jnp.sum(dismenber) > 0:
                     dismenber = dismenber/np.sum(dismenber)
-                #break_int[-1] = 1 - jnp.sum(break_int[:-1])
 
                 #Objects to store neighbors
                 store_nei = list() #Store neighbors
@@ -176,34 +168,28 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 for n in range(sample): #For each neighbor
                     if what_nei[n] == 0: #Unite intervals
                         #Sample block to unite intervals
-                        unite = np.random.choice(np.arange(np.max(block) + 1),size=(2,),replace = False)
-                        k = k + 1 #Update seed
+                        unite = rng.choice(np.arange(np.max(block) + 1),size=(2,),replace = False)
 
                         #Sample intervals to unite in the sampled block and store the result
-                        store_nei.append(ut.unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
-                        k = k + 1 #Update seed
+                        store_nei.append(ut.unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
 
                         #Store error
                         error_batch = np.append(error_batch,store_nei[-1]['error'])
                     elif what_nei[n] == 1: #Dismenber intervals
                         #Sample block to dismenber intervals
-                        b_dis = np.random.choice(np.arange(np.max(block) + 1),size=(1,),p = dismenber)
-                        k = k + 1 #Update seed
+                        b_dis = rng.choice(np.arange(np.max(block) + 1),size=(1,),p = dismenber)
 
                         #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
-                        k = k + 1 #Update seed
+                        store_nei.append(ut.dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
 
                         #Store error
                         error_batch = np.append(error_batch,store_nei[-1]['error'])
                     elif what_nei[n] == 2: #Break interval
                         #Sample interval to break
-                        interval_break = np.random.choice(np.arange(intervals.shape[0]),size=(1,),p = break_int)
-                        k = k + 1 #Update seed
+                        interval_break = rng.choice(np.arange(intervals.shape[0]),size=(1,),p = break_int)
 
                         #Break interval on sampled point and store the result
-                        store_nei.append(ut.break_interval(interval_break,intervals[interval_break,:].copy(),block[interval_break].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = key[k,0],num_classes = num_classes))
-                        k = k + 1 #Update seed
+                        store_nei.append(ut.break_interval(interval_break,intervals[interval_break,:].copy(),block[interval_break].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
 
                         #Store error
                         error_batch = np.append(error_batch,store_nei[-1]['error'])
@@ -213,8 +199,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 intervals = store_nei[which_nei]['intervals'].copy() #Update interval
                 del store_nei, error_batch #Delete trace of neighbors
             #Get error current partition at the end of epoch
-            current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,key[k,0],num_classes)
-            k = k + 1 #Update seed
+            current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes)
 
             #Store current partition as best with it has the least error so far
             if current_error < best_error:
@@ -235,7 +220,6 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
         test_error = ut.error_partition(tab_train,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
-        k = k + 1
 
     #Create video
     if video:
@@ -243,8 +227,9 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
         os.system("ffmpeg -framerate " + str(framerate) + " -i " + filename + "_%5d.png " + filename + ".mp4")
 
     #Estimated function
-    label_intervals = ut.estimate_label_partition(tab_train,best_intervals,best_block,num_classes,key = key[k,0])
-    f = ut.get_estimated_function(tab_train,best_intervals,best_block,num_classes,key = key[k,0])
+    k = int(rng.choice(np.arange(1e6)))
+    label_intervals = ut.estimate_label_partition(tab_train,best_intervals,best_block,num_classes,key = k)
+    f = ut.get_estimated_function(tab_train,best_intervals,best_block,num_classes,key = k)
 
     #Return
     return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}
