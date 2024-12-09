@@ -212,7 +212,6 @@ def get_limits_interval(interval,data):
     return jax.vmap(lambda x: test_limit_interval(interval,x))(data)
 
 #Get elements that are limit of some interval
-@jax.jit
 def get_limits_some_interval(intervals,data):
     """
     Flag the points in the data that are limits of some interval in a array
@@ -259,7 +258,6 @@ def get_elements_interval(interval,data):
     return jax.vmap(lambda x: test_interval(interval,x))(data)
 
 #Get elements in each interval
-@jax.jit
 def get_elements_each_interval(intervals,data):
     """
     Flag the elements in dataset that are in each interval
@@ -284,7 +282,6 @@ def get_elements_each_interval(intervals,data):
     return jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals)
 
 #Get elements in some interval
-@jax.jit
 def get_elements_some_interval(intervals,data):
     """
     Flag the elements in dataset that are in some interval in an array
@@ -751,49 +748,6 @@ def reduce(intervals):
                     return intervals,False
     return intervals,True
 
-#Jit delete
-@jax.jit
-def jit_delete(x, i):
-    """
-    Jitted delete function
-    -------
-    Parameters
-    ----------
-    x : jax.numpy.array
-
-        1D array
-
-    i : jax.numpy.array
-
-        Indexes to delete
-
-    Returns
-    -------
-    jax.numpy.array
-    """
-    return jnp.delete(x,i,assume_unique_indices = True)
-
-@jax.jit
-def jit_row_delete(x, i):
-    """
-    Jitted row delete function
-    -------
-    Parameters
-    ----------
-    x : jax.numpy.array
-
-    21D array
-
-    i : jax.numpy.array
-
-        Indexes to delete
-
-    Returns
-    -------
-    jax.numpy.array
-    """
-    return jnp.delete(x,i,0,assume_unique_indices = True)
-
 #Sample neighbor
 def break_interval(index_interval,break_interval,b_break,intervals,block,nval,tab_train,tab_val,step,key,num_classes = 2):
     """
@@ -929,8 +883,8 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,key,num_class
     #Delete intervals and block united
     which_intervals = np.where(np.logical_or(block == unite[0],block == unite[1]))[0]
     unite_intervals = intervals[which_intervals,:]
-    intervals = jit_row_delete(intervals,which_intervals)
-    block = jit_delete(block,which_intervals)
+    intervals = np.delete(intervals,which_intervals,0)
+    block = np.delete(block,which_intervals)
 
     #Try to reduce united intervals
     reduced = False
