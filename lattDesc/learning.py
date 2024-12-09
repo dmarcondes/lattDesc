@@ -1,7 +1,7 @@
 #Lattice descent on the Interval Parition Lattice
-import jax
-jax.config.update('jax_platform_name', 'cpu')
-from jax import numpy as jnp
+#import jax
+#jax.config.update('jax_platform_name', 'cpu')
+#from jax import numpy as jnp
 from lattDesc import data as dt
 from lattDesc import utils as ut
 import numpy as np
@@ -17,11 +17,11 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     -------
     Parameters
     ----------
-    train : jax.numpy.array
+    train : numpy.array
 
         Array with training data. The last column contains the labels
 
-    val : jax.numpy.array
+    val : numpy.array
 
         Array with validation data. The last column contains the labels
 
@@ -41,7 +41,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
 
         Whether to consider batches for the validation data
 
-    test : jax.numpy.array
+    test : numpy.array
 
         Array with test data. The last column contains the labels
 
@@ -57,11 +57,11 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
 
         Whether the data is unique, i.e., each input point appears only once in the data
 
-    intervals : jax.numpy.array
+    intervals : numpy.array
 
         Array of initial intervals. If None then initialize with the unitary partition
 
-    block : jax.numpy.array
+    block : numpy.array
 
         Array with the blocks of the initial intervals. If None then initialize with the unitary partition
 
@@ -157,7 +157,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 prob = np.append(np.append(small,np.sum(dismenber)),np.sum(break_int)) #Probability of uniting, diemenbering and breaking interval al internal point
                 what_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob/np.sum(prob)) #Sample kind of step to take at each sample neighbor
                 break_int = break_int/np.sum(break_int)
-                if jnp.sum(dismenber) > 0:
+                if np.sum(dismenber) > 0:
                     dismenber = dismenber/np.sum(dismenber)
 
                 #Objects to store neighbors
@@ -233,124 +233,3 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
 
     #Return
     return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}
-
-#Stochastic ISI algorithm
-def stochasticISI(train,class_break,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None):
-    """
-    Stochastic Incremental Splitting of Intervals (ISI) algorithm
-     -------
-    Parameters
-    ----------
-    train : jax.numpy.array
-
-        Array with training data. The last column contains the labels
-
-    class_break : int
-
-        Which class to break the intervals on
-
-    test : jax.numpy.array
-
-        Array with test data. The last column contains the labels
-
-    num_classes : int
-
-        Number of classes
-
-    key : int
-
-        Seed for sampling
-
-    unique : logical
-
-        Whether the data is unique, i.e., each input point appears only once in the data
-
-    intervals : jax.numpy.array
-
-        Array of initial intervals. If None then initialize with the unitary partition
-
-    block : jax.numpy.array
-
-        Array with the blocks of the initial intervals. If None then initialize with the unitary partition
-
-    Returns
-    -------
-    dictionary with the learned 'block','intervals','best_error' and 'test_error', and the trace of the error ('trace_error') and time ('trace_time') over the epochs
-    """
-    #Start seed
-    key = jax.random.split(jax.random.PRNGKey(key),10*train.shape[0])
-    k = 0
-
-    #Parameters
-    d = train.shape[1] - 1
-    trace_error = np.array([])
-    trace_time = np.array([])
-
-    #Frequency table
-    tab_train = dt.get_ftable(train,unique,num_classes)
-    tab_train = jax.random.permutation(jax.random.PRNGKey(key[k,0]),tab_train,0) #Random permutation
-    ntrain = train.shape[0]
-    k = k + 1
-    if test is not None:
-        tab_test = dt.get_ftable(test,unique,num_classes)
-
-    #Get label of each observed domain point
-    label = jax.vmap(lambda x: np.where(x == np.max(x),1,0))(tab_train[:,-num_classes:])
-
-    #Only points without tie
-    tab = tab_train[np.sum(label,1) == 1,:]
-    label = label[np.sum(label,1) == 1,:]
-    label = np.sum(jax.vmap(lambda x: np.where(x == 1,np.arange(num_classes),0))(label),1)
-
-    #Initialize interval
-    if intervals is None or block is None:
-        intervals = -1 + np.zeros((1,d)) #Array with intervals
-        block = np.array([0]) #Array with block of each interval
-
-    #Probability of each point
-    t0 = time.time()
-    freq = jax.vmap(lambda interval: ut.frequency_labels_interval(interval,tab[:,:-num_classes],label,num_classes))(intervals)
-    prob = np.where((freq[:,class_break] > 0)*(np.max(np.delete(freq,class_break,1),1) > 0),1,0)
-    prob = np.sum(jax.vmap(lambda point: np.where(ut.get_interval(point,intervals),prob,0))(tab[:,:-num_classes]),1)
-    prob = np.where(label != class_break,0,prob)
-    limit = ut.get_limits_some_interval(intervals,tab[:,:-num_classes])
-    prob = np.where(limit,0,prob)
-    step = 0
-    best_error = 1
-    with alive_bar() as bar:
-        while(np.max(prob) == 1):
-            #Sample point to break
-            point_break = tab[jax.random.choice(jax.random.PRNGKey(key[k,0]), np.array(list(range(tab.shape[0]))),shape=(1,),p = prob/np.sum(prob)),:]
-            k = k + 1 #Update seed
-            #Update partition
-            new_partition = ut.break_interval(point_break,intervals,block,ntrain,tab_train,tab_train,step = True,key = key[k,0],num_classes = num_classes)
-            intervals = new_partition['intervals']
-            block = new_partition['block']
-            error = new_partition['error']
-            k = k + 1 #Update seed
-            #Update probabilities
-            freq = jax.vmap(lambda interval: ut.frequency_labels_interval(interval,tab[:,:-num_classes],label,num_classes))(intervals)
-            prob = np.where((freq[:,class_break] > 0)*(np.max(np.delete(freq,class_break,1),1) > 0),1,0)
-            prob = np.sum(jax.vmap(lambda point: np.where(ut.get_interval(point,intervals),prob,0))(tab[:,:-num_classes]),1)
-            prob = np.where(label != class_break,0,prob)
-            limit = ut.get_limits_some_interval(intervals,tab[:,:-num_classes])
-            prob = np.where(limit,0,prob)
-            step = step + 1
-            trace_error = np.append(trace_error,error)
-            trace_time = np.append(trace_time,np.array(time.time() - t0))
-            if error < best_error:
-                print('Step ' + str(step) + ' Error ' + str(round(error,3)))
-                best_error = error
-            bar()
-
-    #Get test error
-    test_error = None
-    if test is not None:
-        test_error = ut.error_partition(tab,tab_test,intervals,block,test.shape[0],key[k,0],num_classes)
-        k = k + 1
-
-    #Estimated function
-    label_intervals = ut.estimate_label_partition(tab_train,intervals,block,num_classes,key = key[k,0])
-    f = ut.get_estimated_function(tab_train,intervals,block,num_classes,key = key[k,0])
-
-    return {'block': block,'intervals': intervals,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}
