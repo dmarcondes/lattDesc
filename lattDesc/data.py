@@ -114,7 +114,7 @@ def get_ftable(data,unique,num_classes = 2):
         domain = data[:,:-1]
     #Compute frequencies
     f = jax.vmap(lambda x: get_fpoint(x,data,num_classes))(domain)
-    return jnp.append(domain,f,1).astype(data.dtype)
+    return np.array(jnp.append(domain,f,1).astype(data.dtype))
 
 #Generate picture of paritiion
 def picture_partition(intervals,block,title = 'abc',filename = 'image'):
