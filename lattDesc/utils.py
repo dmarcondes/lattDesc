@@ -635,7 +635,7 @@ def count_points(intervals):
     -------
     jax.numpy.array
     """
-    return jax.vmap(lambda interval: jnp.power(2,jnp.sum(interval == -1) - 1))(intervals)
+    return jax.vmap(lambda interval: jnp.power(2,jnp.sum(interval == -1)))(intervals)
 
 #Sample interval
 def sample_break_interval(point_break,break_interval,key):
@@ -990,3 +990,79 @@ def frequency_labels_interval(interval,data,labels,num_classes = 2):
     return np.bincount(np.where(get_elements_interval(interval,data),labels,num_classes),length = num_classes + 1)[:-1]
 
 frequency_labels_interval = jax.jit(frequency_labels_interval,static_argnames = ['num_classes'])
+
+#Test if intervals are maximal
+def is_maximal(intervals):
+    """
+    Test if intervals are maximal
+    -------
+    Parameters
+    ----------
+    intervals : jax.numpy.array
+
+        Intervals
+
+    Returns
+    -------
+    jax.numpy.array of maximal intervals
+    """
+    for i in range(intervals.shape[0]):
+        fixed = np.where(intervals[i,:] != -1)[0]
+        free = np.where(intervals[i,:] == -1)[0]
+        for j in range(intervals.shape[0]):
+            if i != j and np.sum(intervals[j,] == -1) > 0:
+                if free.shape[0] == 0:
+                    if np.min(np.logical_or(intervals[j,fixed] == intervals[i,fixed],intervals[j,fixed] == -1)):
+                        return False
+                elif fixed.shape[0] == 0:
+                    if np.min(intervals[j,free] == -1):
+                        return False
+                elif np.min(np.logical_or(intervals[j,fixed] == intervals[i,fixed],intervals[j,fixed] == -1)) and np.min(intervals[j,free] == -1):
+                    return False
+    return True
+
+#Reduce to maximal intervals
+def maximal(intervals):
+    """
+    Reduce to maximal intervals
+    -------
+    Parameters
+    ----------
+    intervals : jax.numpy.array
+
+        Intervals
+
+    Returns
+    -------
+    jax.numpy.array of maximal intervals
+    """
+    delete = []
+    for i in range(intervals.shape[0]):
+        if contained_some(intervals[i,:],np.delete(intervals,i,0)):
+            delete = delete + [i]
+    if len(delete) > 0:
+        intervals = np.delete(intervals,delete,0)
+    return intervals
+
+#Test if intervals contain/are contained
+def contained(I1,I2):
+    #I1 is contained in I2
+    I2_fixedI1 = jnp.where(I1 != -1,I2,-1)
+    I1_fixedI1 = jnp.where(I1 != -1,I1,-1)
+    I2_freeI1 = jnp.where(I1 == -1,I2,-1)
+    I1_freeI1 = jnp.where(I1 == -1,I1,-1)
+    c1 = jnp.logical_and(jnp.min(jnp.logical_or(I2_fixedI1 == I1_fixedI1,I2_fixedI1 == -1)),jnp.min(I2_freeI1 == -1))
+    #I2 is contained in I1
+    tmp = I1
+    I1 = I2
+    I2 = tmp
+    I2_fixedI1 = jnp.where(I1 != -1,I2,-1)
+    I1_fixedI1 = jnp.where(I1 != -1,I1,-1)
+    I2_freeI1 = jnp.where(I1 == -1,I2,-1)
+    I1_freeI1 = jnp.where(I1 == -1,I1,-1)
+    c2 = jnp.logical_and(jnp.min(jnp.logical_or(I2_fixedI1 == I1_fixedI1,I2_fixedI1 == -1)),jnp.min(I2_freeI1 == -1))
+    return jnp.logical_or(c1,c2)
+
+#Test if interval is contained/contain some interval
+def contained_some(I1,intervals):
+    return np.max(jax.vmap(lambda I2: contained(I1,I2))(intervals))

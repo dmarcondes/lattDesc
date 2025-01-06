@@ -1,0 +1,28 @@
+\documentclass[crop,tikz]{standalone}
+
+\begin{document}
+\begin{tikzpicture}[scale=1, transform shape]
+
+\tikzstyle{b0} = [rectangle,opacity = .5,draw=black, rounded corners,fill = {rgb:red,0;green,0;blue,255}]
+\node[above] at (0,0.5) {abc};
+
+
+\node[b0] at (0,-0.0) (n0000) {\tiny 0000};
+\node[b0] at (-3,-1.125) (n0001) {\tiny 0001};
+\node[b0] at (-1,-1.125) (n0010) {\tiny 0010};
+\node[b0] at (1,-1.125) (n0100) {\tiny 0100};
+\node[b0] at (3,-1.125) (n1000) {\tiny 1000};
+\node[b0] at (-5,-2.25) (n0011) {\tiny 0011};
+\node[b0] at (-3,-2.25) (n0101) {\tiny 0101};
+\node[b0] at (-1,-2.25) (n0110) {\tiny 0110};
+\node[b0] at (1,-2.25) (n1001) {\tiny 1001};
+\node[b0] at (3,-2.25) (n1010) {\tiny 1010};
+\node[b0] at (5,-2.25) (n1100) {\tiny 1100};
+\node[b0] at (-3,-3.375) (n0111) {\tiny 0111};
+\node[b0] at (-1,-3.375) (n1011) {\tiny 1011};
+\node[b0] at (1,-3.375) (n1101) {\tiny 1101};
+\node[b0] at (3,-3.375) (n1110) {\tiny 1110};
+\node[b0] at (0,-4.5) (n1111) {\tiny 1111};
+
+
+\begin{scope}
