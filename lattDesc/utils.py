@@ -1046,6 +1046,19 @@ def maximal(intervals):
 
 #Test if intervals contain/are contained
 def contained(I1,I2):
+    """
+    Test if two intervals contain/are contained
+    -------
+    Parameters
+    ----------
+    I1,I2 : jax.numpy.array
+
+        Intervals
+
+    Returns
+    -------
+    logical
+    """
     #I1 is contained in I2
     I2_fixedI1 = jnp.where(I1 != -1,I2,-1)
     I1_fixedI1 = jnp.where(I1 != -1,I1,-1)
@@ -1053,7 +1066,7 @@ def contained(I1,I2):
     I1_freeI1 = jnp.where(I1 == -1,I1,-1)
     c1 = jnp.logical_and(jnp.min(jnp.logical_or(I2_fixedI1 == I1_fixedI1,I2_fixedI1 == -1)),jnp.min(I2_freeI1 == -1))
     #I2 is contained in I1
-    tmp = I1
+    tmp = I1.copy()
     I1 = I2
     I2 = tmp
     I2_fixedI1 = jnp.where(I1 != -1,I2,-1)
@@ -1065,4 +1078,21 @@ def contained(I1,I2):
 
 #Test if interval is contained/contain some interval
 def contained_some(I1,intervals):
+    """
+    Test if an interval is contained in/contains some interval in a array
+    -------
+    Parameters
+    ----------
+    I1 : jax.numpy.array
+
+        Interval
+
+    intervals : jax.numpy.array
+
+        Array of intervals
+
+    Returns
+    -------
+    logical
+    """
     return np.max(jax.vmap(lambda I2: contained(I1,I2))(intervals))

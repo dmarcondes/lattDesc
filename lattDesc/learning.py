@@ -253,7 +253,33 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
     return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}
 
 #ISI algorithm
-def ISI(train,unique = False,key = 0):
+def ISI(train,intervals = None,unique = False,key = 0):
+    """
+    Incremental Splitting of Intervals (ISI)
+    -------
+    Parameters
+    ----------
+    train : numpy.array
+
+        Array with training data. The last column contains the labels
+
+    intervals : numpy.array
+
+        Initial intervals
+
+    unique : logical
+
+        Whether the data is unique, i.e., each input point appears only once in the data
+
+    key : int
+
+        Seed for sampling
+
+    Returns
+    -------
+    dictionary with the learned 'basis' and function 'f'
+    """
+    print('------Starting algorithm------')
     #Start seed
     rng = np.random.default_rng(seed = key)
 
@@ -267,7 +293,8 @@ def ISI(train,unique = False,key = 0):
     one_points = tab_train[np.where(tab_train[:,d] < tab_train[:,d + 1])[0],:d]
 
     #Initialize intervals
-    intervals = -1 + np.zeros((1,d))
+    if intervals is None:
+        intervals = -1 + np.zeros((1,d))
 
     #Break intervals in sequence
     print('- Running...')
@@ -276,49 +303,43 @@ def ISI(train,unique = False,key = 0):
             point = zero_points[i,:]
             #Get intervals that contain point
             which_interval = ut.get_interval(point,intervals)
+            print(intervals.shape[0])
             del_intervals = np.delete(intervals,np.where(which_interval),0)
             if np.sum(which_interval) > 0:
                 for k in np.where(which_interval)[0]:
-                    #Get break interval and exclude from intervals
+                    #Get break interval
                     break_interval = intervals[k,:]
                     #Limits of interval
                     A = np.where(break_interval == -1,0,break_interval)
                     B = np.where(break_interval == -1,1,break_interval)
                     #Add intervals
-                    for j in range(d):
-                        if point[j] == 1 and A[j] == 0:
-                            x = np.zeros((1,d))
-                            x[0,j] = 1
-                            x = 1 - x
-                            B_tmp = np.minimum(B,x)
-                            interval_tmp = np.where((A == 0)*(B_tmp == 1),-1,A)
-                            if del_intervals.shape[0] > 0:
-                                if not ut.contained_some(interval_tmp,del_intervals):
-                                    intervals = np.append(intervals,interval_tmp,0)
-                            else:
+                    for j in np.where(np.logical_and(point == 1,A == 0))[0]:
+                        x = np.zeros((1,d))
+                        x[0,j] = 1
+                        x = 1 - x
+                        B_tmp = np.minimum(B,x)
+                        interval_tmp = np.where((A == 0)*(B_tmp == 1),-1,A)
+                        if del_intervals.shape[0] > 0:
+                            if not ut.contained_some(interval_tmp,del_intervals):
                                 intervals = np.append(intervals,interval_tmp,0)
-                        if point[j] == 0 and B[j] == 1:
-                            x = np.zeros((1,d))
-                            x[0,j] = 1
-                            A_tmp = np.maximum(A,x)
-                            interval_tmp = np.where((A_tmp == 0)*(B == 1),-1,B)
-                            if del_intervals.shape[0] > 0:
-                                if not ut.contained_some(interval_tmp,del_intervals):
-                                    intervals = np.append(intervals,interval_tmp,0)
-                            else:
+                        else:
+                            intervals = np.append(intervals,interval_tmp,0)
+                    for j in np.where(np.logical_and(point == 0,B == 1))[0]:
+                        x = np.zeros((1,d))
+                        x[0,j] = 1
+                        A_tmp = np.maximum(A,x)
+                        interval_tmp = np.where((A_tmp == 0)*(B == 1),-1,B)
+                        if del_intervals.shape[0] > 0:
+                            if not ut.contained_some(interval_tmp,del_intervals):
                                 intervals = np.append(intervals,interval_tmp,0)
-            intervals = np.delete(intervals,np.where(which_interval),0)
-            #Reduce to maximal
-            #tinit = time.time()
-            #intervals = np.delete(intervals,np.where(which_interval)[0],0)
-            #intervals = ut.maximal(intervals)
-            #print(time.time() - tinit)
+                        else:
+                            intervals = np.append(intervals,interval_tmp,0)
+                intervals = np.delete(intervals,np.where(which_interval)[0],0)
+                #Erase intervals that do not contain one points
+                intervals = np.delete(intervals,np.where(np.sum(ut.get_elements_each_interval(intervals,one_points),1) == 0)[0],0)
             bar()
 
-    #Erase intervals that do not contain one points
-    intervals = np.delete(intervals,np.where(np.sum(ut.get_elements_each_interval(intervals,one_points),1) == 0)[0],0)
-
-    #Get estimated funtion
+    #Get estimated function
     f = lambda x: int(ut.get_elements_some_interval(intervals,x.reshape((1,d)))[0])
 
     return {'basis': intervals,'f': f}
