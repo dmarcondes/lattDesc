@@ -165,7 +165,7 @@ def test_not_interval(interval,x):
     fixed = jnp.where(interval >= 0,1,0)
     return jnp.sum(jnp.where(fixed == 1,x != interval,False)) != 0
 
-#Teste if element is limit of interval (we know it is in interval)
+#Test if element is limit of interval (we know it is in interval)
 @jax.jit
 def test_limit_interval(interval,x):
     """
@@ -231,6 +231,30 @@ def get_limits_some_interval(intervals,data):
     jax.numpy.array of logical
     """
     return jnp.sum(jax.vmap(lambda interval: get_limits_interval(interval,data))(intervals),0) > 0
+
+#Get limits of each interval
+def get_limits_each_interval(intervals,data):
+    """
+    Flag the elements in dataset that are the limits of each interval
+    -------
+
+    Parameters
+    ----------
+    intervals : jax.numpy.array
+
+        Intervals
+
+    data : jax.numpy.array
+
+        Dataset
+
+    Returns
+    -------
+
+    jax.numpy.array of logical
+
+    """
+    return jnp.logical_and(jax.vmap(lambda interval: get_elements_interval(interval,data))(intervals),jax.vmap(lambda interval: get_limits_interval(interval,data))(intervals))
 
 #Get elements in interval
 @jax.jit

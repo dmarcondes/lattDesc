@@ -343,3 +343,99 @@ def ISI(train,intervals = None,unique = False,key = 0):
     f = lambda x: int(ut.get_elements_some_interval(intervals,x.reshape((1,d)))[0])
 
     return {'basis': intervals,'f': f}
+
+#Disjoint ISI algorithm
+def disjoint_ISI(train,intervals = None,unique = False,key = 0):
+    """
+    Incremental Splitting of Intervals (ISI)
+    -------
+    Parameters
+    ----------
+    train : numpy.array
+
+        Array with training data. The last column contains the labels
+
+    intervals : numpy.array
+
+        Initial intervals
+
+    block : numpy.array
+
+        Initial blocks
+
+    unique : logical
+
+        Whether the data is unique, i.e., each input point appears only once in the data
+
+    key : int
+
+        Seed for sampling
+
+    Returns
+    -------
+    dictionary with the learned 'basis' and function 'f'
+    """
+    print('------Starting algorithm------')
+    #Start seed
+    rng = np.random.default_rng(seed = key)
+
+    #Get frequency tables
+    print('- Creating frequency tables')
+    d = train.shape[1] - 1 #dimension
+    tab_train = dt.get_ftable(train,unique,2) #Training table
+
+    #Get zero and one points
+    zero_points = rng.permutation(tab_train[np.where(tab_train[:,d] > tab_train[:,d + 1])[0],:d])
+    one_points = tab_train[np.where(tab_train[:,d] < tab_train[:,d + 1])[0],:d]
+
+    #Initialize intervals
+    if intervals is None:
+        intervals = -1 + np.zeros((1,d))
+        block = np.array([0])
+
+    #Probability of each interval
+    step = 1
+    error = ut.error_partition(tab_train,tab_train,intervals,block,train.shape[0],key,num_classes = 2)
+    pzero = np.sum(np.logical_and(ut.get_elements_each_interval(intervals,zero_points),1 - ut.get_limits_each_interval(intervals,zero_points)),1)
+    pone = np.sum(np.logical_and(ut.get_elements_each_interval(intervals,one_points),1 - ut.get_limits_each_interval(intervals,one_points)),1)
+    prob = np.where(pone == 0,0,pzero) + np.where(pzero == 0,0,pone)
+    print('- Running...')
+    while(np.sum(prob) > 0):
+        print('Step ' + str(step) + ' Error = ' + str(round(error,5)))
+        prob = prob.astype('float64')
+        prob = prob/np.sum(prob)
+        #Sample interval
+        i = rng.choice(np.arange(intervals.shape[0]),size = 1,p = prob)
+        #Sample point
+        log = np.logical_and(1 - ut.get_limits_interval(intervals[i,:],tab_train[:,:d]),ut.get_elements_some_interval(intervals[i,:],tab_train[:,:d]))
+        k = rng.choice(np.where(log)[0],size = 1)
+        #Break interval
+        point_break = tab_train[k,:d]
+        res_break = ut.break_interval(point_break,i,intervals[i,:].copy(),block[i].copy(),intervals.copy(),block.copy(),tab_train.shape[0],tab_train,tab_train,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = 2)
+        intervals = res_break['intervals'].copy()
+        block = ut.estimate_label_partition(tab_train,intervals,np.arange(intervals.shape[0]),num_classes = 2,key = 0).astype(np.int32)
+        #Reduce
+        #if np.sum(block == 1) > 1:
+        #    reduced = False
+        #else:
+        #    reduced = True
+        #intervals_one = intervals[block == 1,:]
+        #while(not reduced):
+        #    intervals_one,reduced = ut.reduce(intervals_one)
+        #if np.sum(block == 0) > 1:
+        #    reduced = False
+        #else:
+        #    reduced = True
+        #intervals_zero = intervals[block == 0,:]
+        #while(not reduced):
+        #    intervals_zero,reduced = ut.reduce(intervals_zero)
+        #intervals = np.append(intervals_one,intervals_zero,0)
+        #block = ut.estimate_label_partition(tab_train,intervals,np.arange(intervals.shape[0]),num_classes = 2,key = 0).astype(np.int32)
+        #Probability of each interval
+        pzero = np.sum(np.logical_and(ut.get_elements_each_interval(intervals,zero_points),1 - ut.get_limits_each_interval(intervals,zero_points)),1)
+        pone = np.sum(np.logical_and(ut.get_elements_each_interval(intervals,one_points),1 - ut.get_limits_each_interval(intervals,one_points)),1)
+        prob = np.where(pone == 0,0,pzero) + np.where(pzero == 0,0,pone)
+        #Update error
+        error = ut.error_partition(tab_train,tab_train,intervals,block,train.shape[0],key,num_classes = 2)
+        step = step + 1
+    return {'intervals': intervals,'block': block,'error': error,'step': step - 1,'f': ut.get_estimated_function(tab_train,intervals,block,num_classes = 2,key = key)}
