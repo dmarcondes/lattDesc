@@ -1,5 +1,4 @@
 #Lattice descent on the Interval Parition Lattice
-import jax
 from lattDesc import data as dt
 from lattDesc import utils as ut
 import numpy as np
@@ -9,7 +8,7 @@ from alive_progress import alive_bar
 import os
 
 #Stochastic Descent on the Boolean Interval Partition Lattice
-def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
+def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
     """
     Stochastic Lattice Descent Algorithm in the Boolean Interval Partition Lattice
     -------
@@ -30,10 +29,6 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
     sample : int
 
         Number of neighbors to sample at each step
-
-    projection = logical
-
-        Whether to search a projection of the lattice on the data (True) or the whole lattice
 
     batches : int
 
@@ -103,11 +98,6 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
     if test is not None: #Get test table if there is test data
         tab_test = dt.get_ftable(test,unique,num_classes)
 
-    #Projection
-    if not projection and d > 25:
-        projection = True
-        print('\n Warning: Projection is being forced since d > 25 variables \n')
-
     #Batches Size
     if unique: #If data is unique, batches of frequency table
         bsize = math.floor(tab_train.shape[0]/batches) #Batch size for training
@@ -123,7 +113,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
         block = np.array([0]) #Array with block of each interval
 
     #Store error
-    current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes) #Get error
+    current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes) #Get error
     best_error = current_error #Best error_batch
     best_intervals = intervals.copy() #Best intervals
     best_block = block.copy() #Best block
@@ -157,19 +147,17 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
                 tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes)
 
                 #Compute probabilities
-                small = np.array(math.comb(np.max(block) + 1,2)) #Number of ways of uniting blocks
-                dismenber = np.power(np.bincount(block) - 1,2) - 1 #Number of ways of dimenbering
-                dismenber = np.where(dismenber == -1,0,dismenber).astype('float64')
-                if projection:
-                    break_int = np.array(1 - ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes])).astype('float64')
-                else:
-                    break_int = np.array(ut.count_points(intervals)).astype('float64')
-                prob = np.append(np.append(small,np.sum(dismenber)),np.sum(break_int)).astype('float64') #Probability of uniting, diemenbering and breaking interval al internal point
-                what_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob/np.sum(prob)) #Sample kind of step to take at each sample neighbor
-                if np.sum(break_int) > 0:
-                    break_int = break_int/np.sum(break_int)
-                if np.sum(dismenber) > 0:
-                    dismenber = dismenber/np.sum(dismenber)
+                total_unite = np.array(math.comb(np.max(block) + 1,2)).astype('float64') #Number of ways of uniting blocks
+                break_points = np.array(1 - ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes])) #Points on which intervals can be broken
+                total_break = np.sum(break_points).astype('float64') #Number of points on which intervals can be broken (internal points)
+                dismember = np.power(np.bincount(block) - 1,2).astype('float64') - 1 #Number of ways of dismemebering blocks for each blocks
+                dismember[dismember < 0 ] = 0 #Correct blocks with only one interval
+                total_dismember = np.sum(dismember) #Total number of ways of dismemebering blocks
+                total = total_unite + total_break + total_dismember #Total manners of obtaining neighbors
+                prob_manners = np.array([total_unite/total,total_dismember/total,total_break/total]).reshape((3,)) #Probabilities of uniting, dismembering and breaking interval at internal point
+
+                #Sample kind of step at each neighbor
+                kind_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob_manners) #Sample kind of step to take at each sample neighbo
 
                 #Objects to store neighbors
                 store_nei = list() #Store neighbors
@@ -177,36 +165,31 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
 
                 #Sample neighbors
                 for n in range(sample): #For each neighbor
-                    if what_nei[n] == 0: #Unite intervals
+                    if kind_nei[n] == 0: #Unite intervals
                         #Sample block to unite intervals
                         unite = rng.choice(np.arange(np.max(block) + 1),size=(2,),replace = False)
 
                         #Sample intervals to unite in the sampled block and store the result
-                        store_nei.append(ut.unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
+                        store_nei.append(ut.unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
 
                         #Store error
                         error_batch = np.append(error_batch,store_nei[-1]['error'])
-                    elif what_nei[n] == 1: #Dismenber intervals
+                    elif kind_nei[n] == 1: #Dismenber intervals
                         #Sample block to dismenber intervals
-                        b_dis = rng.choice(np.arange(np.max(block) + 1),size=(1,),p = dismenber)
+                        b_dis = rng.choice(np.arange(np.max(block) + 1),size=(1,),p = dismember/total_dismember)
 
                         #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
+                        store_nei.append(ut.dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
 
                         #Store error
                         error_batch = np.append(error_batch,store_nei[-1]['error'])
-                    elif what_nei[n] == 2: #Break interval
-                        if projection:
-                            #Sample point to break on
-                            point_break = tab_train_batch[rng.choice(np.arange(tab_train_batch.shape[0]),size = (1,),p = break_int),:-num_classes]
-                            interval_break = np.where(ut.get_interval(point_break,intervals))[0]
-                        else:
-                            #Sample interval to break
-                            interval_break = rng.choice(np.arange(intervals.shape[0]),size=(1,),p = break_int)
-                            point_break = None
+                    elif kind_nei[n] == 2: #Break interval
+                        #Sample point to break on
+                        point_break = tab_train_batch[rng.choice(np.arange(tab_train_batch.shape[0]),size = (1,),p = break_points/np.sum(break_points)),:-num_classes][0,:]
+                        interval_index = np.where(ut.get_interval(point_break,intervals))[0]
 
                         #Break interval on sampled point and store the result
-                        store_nei.append(ut.break_interval(point_break,interval_break,intervals[interval_break,:].copy(),block[interval_break].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
+                        store_nei.append(ut.break_interval(point_break,interval_index,intervals[interval_index,:].copy(),block[interval_index].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
 
                         #Store error
                         error_batch = np.append(error_batch,store_nei[-1]['error'])
@@ -216,7 +199,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
                 intervals = store_nei[which_nei]['intervals'].copy() #Update interval
                 del store_nei, error_batch #Delete trace of neighbors
             #Get error current partition at the end of epoch
-            current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes)
+            current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes)
 
             #Store current partition as best with it has the least error so far
             if current_error < best_error:
@@ -236,7 +219,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
     #Test error
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
-        test_error = ut.error_partition(tab_train,tab_test,intervals,block,test.shape[0],int(rng.choice(np.arange(1e6))),num_classes)
+        test_error = ut.error_partition(tab_train,tab_test,intervals,block,test.shape[0],rng,num_classes)
 
     #Create video
     if video:
@@ -244,9 +227,8 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
         os.system("ffmpeg -framerate " + str(framerate) + " -i " + filename + "_%5d.png " + filename + ".mp4")
 
     #Estimated function
-    k = int(rng.choice(np.arange(1e6)))
-    label_intervals = ut.estimate_label_partition(tab_train,best_intervals,best_block,num_classes,key = k)
-    f = ut.get_estimated_function(tab_train,best_intervals,best_block,num_classes,key = k)
+    label_intervals = ut.estimate_label_partition(tab_train,best_intervals,best_block,rng,num_classes)
+    f = ut.get_estimated_function(tab_train,best_intervals,best_block,rng,num_classes)
 
     #Return
     return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}

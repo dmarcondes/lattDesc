@@ -1,5 +1,4 @@
 #Lattice descent on the Interval Parition Lattice
-import jax
 from lattDesc import data as dt
 from lattDesc import utils as ut
 import numpy as np
@@ -9,7 +8,7 @@ from alive_progress import alive_bar
 import os
 
 #Stochastic Descent on the Boolean Interval Partition Lattice
-def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
+def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
     """
     Stochastic Lattice Descent Algorithm in the Boolean Interval Partition Lattice
     -------
@@ -30,10 +29,6 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
     sample : int
 
         Number of neighbors to sample at each step
-
-    projection = logical
-
-        Whether to search a projection of the lattice on the data (True) or the whole lattice
 
     batches : int
 
@@ -84,155 +79,143 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,projection = True,batches = 1,b
     dictionary with the learned 'block','intervals','best_error' and 'test_error', and the trace of the error ('trace_error') and time ('trace_time') over the epochs
     """
     print('------Starting algorithm------')
-    #Start seed
-    rng = np.random.default_rng(seed = key)
+#Start seed
+rng = np.random.default_rng(seed = key)
 
-    #If video, create dir to save images
-    if video:
-        os.system('rm -r tmp_' + filename)
-        os.system('mkdir tmp_' + filename)
-        dir = '/tmp_' + filename
-        os.chdir(os.getcwd() + dir)
+#If video, create dir to save images
+if video:
+    os.system('rm -r tmp_' + filename)
+    os.system('mkdir tmp_' + filename)
+    dir = '/tmp_' + filename
+    os.chdir(os.getcwd() + dir)
 
-    #Get frequency tables
-    print('- Creating frequency tables')
-    d = train.shape[1] - 1 #dimension
-    tab_train = dt.get_ftable(train,unique,num_classes) #Training table
-    tab_val = dt.get_ftable(val,unique,num_classes) #Validation table
-    nval = val.shape[0] #Validation sample size
-    if test is not None: #Get test table if there is test data
-        tab_test = dt.get_ftable(test,unique,num_classes)
+#Get frequency tables
+print('- Creating frequency tables')
+d = train.shape[1] - 1 #dimension
+tab_train = dt.get_ftable(train,unique,num_classes) #Training table
+tab_val = dt.get_ftable(val,unique,num_classes) #Validation table
+nval = val.shape[0] #Validation sample size
+if test is not None: #Get test table if there is test data
+    tab_test = dt.get_ftable(test,unique,num_classes)
 
-    #Projection
-    if not projection and d > 25:
-        projection = True
-        print('\n Warning: Projection is being forced since d > 25 variables \n')
+#Batches Size
+if unique: #If data is unique, batches of frequency table
+    bsize = math.floor(tab_train.shape[0]/batches) #Batch size for training
+    bsize_val = math.floor(tab_val.shape[0]/batches) #Batch size for validation
+else: #Else, batches of data
+    bsize = math.floor(train.shape[0]/batches) #Batch size for training
+    bsize_val = math.floor(val.shape[0]/batches) #Batch size for validation
 
-    #Batches Size
-    if unique: #If data is unique, batches of frequency table
-        bsize = math.floor(tab_train.shape[0]/batches) #Batch size for training
-        bsize_val = math.floor(tab_val.shape[0]/batches) #Batch size for validation
-    else: #Else, batches of data
-        bsize = math.floor(train.shape[0]/batches) #Batch size for training
-        bsize_val = math.floor(val.shape[0]/batches) #Batch size for validation
+#Initial partition
+print('- Initializing objects')
+if intervals is None or block is None: #If initial partition is not given, initialize
+    intervals = -1 + np.zeros((1,d)) #Array with intervals
+    block = np.array([0]) #Array with block of each interval
 
-    #Initial partition
-    print('- Initializing objects')
-    if intervals is None or block is None: #If initial partition is not given, initialize
-        intervals = -1 + np.zeros((1,d)) #Array with intervals
-        block = np.array([0]) #Array with block of each interval
+#Store error
+current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes) #Get error
+best_error = current_error #Best error_batch
+best_intervals = intervals.copy() #Best intervals
+best_block = block.copy() #Best block
 
-    #Store error
-    current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes) #Get error
-    best_error = current_error #Best error_batch
-    best_intervals = intervals.copy() #Best intervals
-    best_block = block.copy() #Best block
+#If video
+if video:
+    dt.picture_partition(intervals,block,title = 'Epoch 0 Error = ' + str(round(current_error,3)),filename = filename + '_' + str(0).zfill(5))
 
-    #If video
-    if video:
-        dt.picture_partition(intervals,block,title = 'Epoch 0 Error = ' + str(round(current_error,3)),filename = filename + '_' + str(0).zfill(5))
+#Objects to trace
+trace_error = np.array([]) #Trace algorithm time
+trace_time = np.array([]) #Trace algorithm error
+time_unite = np.array([])
+time_dismenber = np.array([])
+time_break = np.array([])
 
-    #Objects to trace
-    trace_error = np.array([]) #Trace algorithm time
-    trace_time = np.array([]) #Trace algorithm error
-    time_unite = np.array([])
-    time_dismenber = np.array([])
-    time_break = np.array([])
+#For each epoch
+print('- Starting epochs')
+tinit = time.time() #Initialize time
+print(' Initial error: ' + str(round(best_error,3))) #Prints initial error
+with alive_bar(epochs) as bar: #Alive bar for tracing
+    for e in range(epochs): #For each epoch
+        if batches > 1: #If there should be training batches
+            if unique: #If data is unique, batches of frequency table
+                tab_train = rng.permutation(tab_train,0) #Random permutation of training table
+                tab_val = rng.permutation(tab_val,0) #Random permutation of validation table
+            else: #Batches of data
+                train = rng.permutation(train,0) #Random permutation of training data
+                val = rng.permutation(val,0) #Random permutation of validation data
+        for b in range(batches): #For each batch
+            #Get frequency table of batch
+            tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes)
 
-    #For each epoch
-    print('- Starting epochs')
-    tinit = time.time() #Initialize time
-    print(' Initial error: ' + str(round(best_error,3))) #Prints initial error
-    with alive_bar(epochs) as bar: #Alive bar for tracing
-        for e in range(epochs): #For each epoch
-            if batches > 1: #If there should be training batches
-                if unique: #If data is unique, batches of frequency table
-                    tab_train = rng.permutation(tab_train,0) #Random permutation of training table
-                    tab_val = rng.permutation(tab_val,0) #Random permutation of validation table
-                else: #Batches of data
-                    train = rng.permutation(train,0) #Random permutation of training data
-                    val = rng.permutation(val,0) #Random permutation of validation data
-            for b in range(batches): #For each batch
-                #Get frequency table of batch
-                tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes)
+            #Compute probabilities
+            total_unite = np.array(math.comb(np.max(block) + 1,2)).astype('float64') #Number of ways of uniting blocks
+            break_points = np.array(1 - ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes])) #Points on which intervals can be broken
+            total_break = np.sum(break_points).astype('float64') #Number of points on which intervals can be broken (internal points)
+            dismember = np.power(np.bincount(block) - 1,2).astype('float64') - 1 #Number of ways of dismemebering blocks for each blocks
+            dismember[dismember < 0 ] = 0 #Correct blocks with only one interval
+            total_dismember = np.sum(dismember) #Total number of ways of dismemebering blocks
+            total = total_unite + total_break + total_dismember #Total manners of obtaining neighbors
+            prob_manners = np.array([total_unite/total,total_dismember/total,total_break/total]).reshape((3,)) #Probabilities of uniting, dismembering and breaking interval at internal point
 
-                #Compute probabilities
-                small = np.array(math.comb(np.max(block) + 1,2)) #Number of ways of uniting blocks
-                dismenber = np.power(np.bincount(block) - 1,2) - 1 #Number of ways of dimenbering
-                dismenber = np.where(dismenber == -1,0,dismenber).astype('float64')
-                if projection:
-                    break_int = np.array(1 - ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes])).astype('float64')
-                else:
-                    break_int = np.array(ut.count_points(intervals)).astype('float64')
-                prob = np.append(np.append(small,np.sum(dismenber)),np.sum(break_int)).astype('float64') #Probability of uniting, diemenbering and breaking interval al internal point
-                what_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob/np.sum(prob)) #Sample kind of step to take at each sample neighbor
-                if np.sum(break_int) > 0:
-                    break_int = break_int/np.sum(break_int)
-                if np.sum(dismenber) > 0:
-                    dismenber = dismenber/np.sum(dismenber)
+            #Sample kind of step at each neighbor
+            kind_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob_manners) #Sample kind of step to take at each sample neighbo
 
-                #Objects to store neighbors
-                store_nei = list() #Store neighbors
-                error_batch = np.array([]) #Store error
+            #Objects to store neighbors
+            store_nei = list() #Store neighbors
+            error_batch = np.array([]) #Store error
 
-                #Sample neighbors
-                for n in range(sample): #For each neighbor
-                    if what_nei[n] == 0: #Unite intervals
-                        #Sample block to unite intervals
-                        unite = rng.choice(np.arange(np.max(block) + 1),size=(2,),replace = False)
+            #Sample neighbors
+            for n in range(sample): #For each neighbor
+                if kind_nei[n] == 0: #Unite intervals
+                    #Sample block to unite intervals
+                    unite = rng.choice(np.arange(np.max(block) + 1),size=(2,),replace = False)
 
-                        #Sample intervals to unite in the sampled block and store the result
-                        store_nei.append(ut.unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
+                    #Sample intervals to unite in the sampled block and store the result
+                    store_nei.append(ut.unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
 
-                        #Store error
-                        error_batch = np.append(error_batch,store_nei[-1]['error'])
-                    elif what_nei[n] == 1: #Dismenber intervals
-                        #Sample block to dismenber intervals
-                        b_dis = rng.choice(np.arange(np.max(block) + 1),size=(1,),p = dismenber)
+                    #Store error
+                    error_batch = np.append(error_batch,store_nei[-1]['error'])
+                elif kind_nei[n] == 1: #Dismenber intervals
+                    #Sample block to dismenber intervals
+                    b_dis = rng.choice(np.arange(np.max(block) + 1),size=(1,),p = total_dismenber/np.sum(total_dismember))
 
-                        #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
+                    #Sample dismenbering of the sampled block and store the result
+                    store_nei.append(ut.dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
 
-                        #Store error
-                        error_batch = np.append(error_batch,store_nei[-1]['error'])
-                    elif what_nei[n] == 2: #Break interval
-                        if projection:
-                            #Sample point to break on
-                            point_break = tab_train_batch[rng.choice(np.arange(tab_train_batch.shape[0]),size = (1,),p = break_int),:-num_classes]
-                            interval_break = np.where(ut.get_interval(point_break,intervals))[0]
-                        else:
-                            #Sample interval to break
-                            interval_break = rng.choice(np.arange(intervals.shape[0]),size=(1,),p = break_int)
-                            point_break = None
+                    #Store error
+                    error_batch = np.append(error_batch,store_nei[-1]['error'])
+                elif kind_nei[n] == 2: #Break interval
+                    #Sample point to break on
+                    point_break = tab_train_batch[rng.choice(np.arange(tab_train_batch.shape[0]),size = (1,),p = break_points/np.sum(break_points)),:-num_classes][0,:]
+                    interval_index = np.where(ut.get_interval(point_break,intervals))[0]
 
-                        #Break interval on sampled point and store the result
-                        store_nei.append(ut.break_interval(point_break,interval_break,intervals[interval_break,:].copy(),block[interval_break].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = num_classes))
+                    #Break interval on sampled point and store the result
+                    store_nei.append(ut.break_interval(point_break,interval_index,intervals[interval_break,:].copy(),block[interval_break].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
 
-                        #Store error
-                        error_batch = np.append(error_batch,store_nei[-1]['error'])
-                #Update partition at each batch
-                which_nei = np.where(error_batch == np.min(error_batch))[0][0] #Get first neighbor with the least error
-                block = store_nei[which_nei]['block'].copy() #Update block
-                intervals = store_nei[which_nei]['intervals'].copy() #Update interval
-                del store_nei, error_batch #Delete trace of neighbors
-            #Get error current partition at the end of epoch
-            current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes)
+                    #Store error
+                    error_batch = np.append(error_batch,store_nei[-1]['error'])
+            #Update partition at each batch
+            which_nei = np.where(error_batch == np.min(error_batch))[0][0] #Get first neighbor with the least error
+            block = store_nei[which_nei]['block'].copy() #Update block
+            intervals = store_nei[which_nei]['intervals'].copy() #Update interval
+            del store_nei, error_batch #Delete trace of neighbors
+        #Get error current partition at the end of epoch
+        current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,int(rng.choice(np.arange(1e6))),num_classes)
 
-            #Store current partition as best with it has the least error so far
-            if current_error < best_error:
-                best_error = current_error #Store error
-                best_intervals = intervals.copy() #Store intervals
-                best_block = block.copy() #Store blocks
-                print('Time: ' + str(round(time.time() - tinit,2)) + ' Error: ' + str(round(best_error,3))) #Print error
+        #Store current partition as best with it has the least error so far
+        if current_error < best_error:
+            best_error = current_error #Store error
+            best_intervals = intervals.copy() #Store intervals
+            best_block = block.copy() #Store blocks
+            print('Time: ' + str(round(time.time() - tinit,2)) + ' Error: ' + str(round(best_error,3))) #Print error
 
-            #Trace
-            trace_error = np.append(trace_error,current_error) #Trace error
-            trace_time = np.append(trace_time,np.array([time.time() - tinit])) #Trace time
+        #Trace
+        trace_error = np.append(trace_error,current_error) #Trace error
+        trace_time = np.append(trace_time,np.array([time.time() - tinit])) #Trace time
 
-            #If video
-            if video:
-                dt.picture_partition(intervals,block,title = 'Epoch ' + str(e) + ' Error = ' + str(round(current_error,3)),filename = filename + '_' + str(e + 1).zfill(5))
-            bar() #Update bar
+        #If video
+        if video:
+            dt.picture_partition(intervals,block,title = 'Epoch ' + str(e) + ' Error = ' + str(round(current_error,3)),filename = filename + '_' + str(e + 1).zfill(5))
+        bar() #Update bar
     #Test error
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data

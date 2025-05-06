@@ -62,11 +62,11 @@ def get_fpoint(x,data,num_classes = 2):
     -------
     Parameters
     ----------
-    x : jax.numpy.array
+    x : numpy.array
 
         Point to condition on
 
-    data : jax.numpy.array
+    data : numpy.array
 
         Data array
 
@@ -76,13 +76,13 @@ def get_fpoint(x,data,num_classes = 2):
 
     Returns
     -------
-    jax.numpy.array with the empirical frequencies
+    numpy.array with the empirical frequencies
     """
-    data = jax.lax.select(jnp.repeat((data[:,:-1] == x).all(1).reshape((data.shape[0],1)),data.shape[1],1),data,-1 + jnp.zeros(data.shape).astype(data.dtype))
-    freq = jax.nn.one_hot(data[:,-1],num_classes)
-    return jnp.sum(freq,0)
-
-get_fpoint = jax.jit(get_fpoint,static_argnames = ['num_classes'])
+    data_cond = data[(data[:,:-1] == x).all(1),:]
+    freq = []
+    for i in range(num_classes):
+        freq = freq + [np.sum(data_cond[:,-1] == i)]
+    return freq
 
 #Get frequence table
 def get_ftable(data,unique,num_classes = 2):
@@ -91,7 +91,7 @@ def get_ftable(data,unique,num_classes = 2):
     -------
     Parameters
     ----------
-    data : jax.numpy.array
+    data : numpy.array
 
         Data array
 
@@ -109,12 +109,14 @@ def get_ftable(data,unique,num_classes = 2):
     """
     #Get domain
     if not unique:
-        domain = jnp.unique(data[:,:-1],axis = 0)
+        domain = np.unique(data[:,:-1],axis = 0)
     else:
         domain = data[:,:-1]
     #Compute frequencies
-    f = jax.vmap(lambda x: get_fpoint(x,data,num_classes))(domain)
-    return np.array(jnp.append(domain,f,1).astype(data.dtype))
+    f = []
+    for i in range(domain.shape[0]):
+        f = f + [get_fpoint(domain[i,:],data,num_classes)]
+    return np.append(domain,np.array(f).reshape((domain.shape[0],2)),1)
 
 #Generate picture of paritiion
 def picture_partition(intervals,block,title = 'abc',filename = 'image'):
@@ -123,11 +125,11 @@ def picture_partition(intervals,block,title = 'abc',filename = 'image'):
     -------
     Parameters
     ----------
-    intervals : jax.numpy.array
+    intervals : numpy.array
 
         Intervals of partition
 
-    block : jax.numpy.array
+    block : numpy.array
 
         Block of each interval
 
