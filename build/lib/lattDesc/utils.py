@@ -426,7 +426,7 @@ def estimate_label_block(tab_train,intervals,rng,num_classes = 2):
     numpy.array
     """
     tab_train = ftable_block(intervals,tab_train,num_classes)
-    pred = freq == np.max(freq)
+    pred = tab_train == np.max(tab_train)
     p = np.where(pred,1,0)
     pred = rng.choice(np.arange(num_classes),size = (1,),p = p/np.sum(p))
     return pred
@@ -629,23 +629,6 @@ def get_inf(point,interval):
     """
     return np.where(np.logical_and(interval == -1.0,point == 0.0),-1.0,point)
 
-#Count the internal points in each interval
-@jax.jit
-def count_points(intervals):
-    """
-    Count internal points in each interval
-    -------
-    Parameters
-    ----------
-    intervals : jax.numpy.array
-
-        Intervals
-    Returns
-    -------
-    jax.numpy.array
-    """
-    return jax.vmap(lambda interval: jnp.power(2,jnp.sum(interval == -1)))(intervals)
-
 #Sample interval
 def sample_break_interval(point_break,interval_break,rng):
     """
@@ -716,7 +699,7 @@ def update_partition(b_break,intervals,cover_intervals,block,index_interval,divi
 
     Returns
     -------
-    .numpy.arrays of intervals and block
+    numpy.arrays of intervals and block
     """
     intervals = np.append(intervals,cover_intervals,0)
     intervals = np.delete(intervals,index_interval,0)
@@ -968,64 +951,24 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,rng,num_cl
     else:
         return {'block': block,'intervals': intervals,'error': error}
 
-#Frequency of labels of points in a interval
-def frequency_labels_interval(interval,data,labels,num_classes = 2):
-    return np.bincount(np.where(get_elements_interval(interval,data),labels,num_classes),length = num_classes + 1)[:-1]
-
-frequency_labels_interval = jax.jit(frequency_labels_interval,static_argnames = ['num_classes'])
-
-#Test if intervals are maximal
-def is_maximal(intervals):
-    """
-    Test if intervals are maximal
-    -------
-    Parameters
-    ----------
-    intervals : jax.numpy.array
-
-        Intervals
-
-    Returns
-    -------
-    jax.numpy.array of maximal intervals
-    """
-    for i in range(intervals.shape[0]):
-        fixed = np.where(intervals[i,:] != -1)[0]
-        free = np.where(intervals[i,:] == -1)[0]
-        for j in range(intervals.shape[0]):
-            if i != j and np.sum(intervals[j,] == -1) > 0:
-                if free.shape[0] == 0:
-                    if np.min(np.logical_or(intervals[j,fixed] == intervals[i,fixed],intervals[j,fixed] == -1)):
-                        return False
-                elif fixed.shape[0] == 0:
-                    if np.min(intervals[j,free] == -1):
-                        return False
-                elif np.min(np.logical_or(intervals[j,fixed] == intervals[i,fixed],intervals[j,fixed] == -1)) and np.min(intervals[j,free] == -1):
-                    return False
-    return True
-
-#Reduce to maximal intervals
-def maximal(intervals):
-    """
-    Reduce to maximal intervals
-    -------
-    Parameters
-    ----------
-    intervals : jax.numpy.array
-
-        Intervals
-
-    Returns
-    -------
-    jax.numpy.array of maximal intervals
-    """
-    delete = []
-    for i in range(intervals.shape[0]):
-        if contained_some(intervals[i,:],np.delete(intervals,i,0)):
-            delete = delete + [i]
-    if len(delete) > 0:
-        intervals = np.delete(intervals,delete,0)
-    return intervals
+#Sample a neighbor and visit
+def sample_visit_neighbor(kind_nei,prob_dismember,prob_break,block,intervals,bnval,tab_train_batch,tab_val_batch,rng,num_classes):
+    if kind_nei == 0: #Unite intervals
+        #Sample block to unite intervals
+        unite = rng.choice(np.arange(np.max(block) + 1),size=(2,),replace = False)
+        #Sample intervals to unite in the sampled block and return the result
+        return unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
+    elif kind_nei == 1: #Dismenber intervals
+        #Sample block to dismenber intervals
+        b_dis = rng.choice(np.arange(np.max(block) + 1),size=(1,),p = prob_dismember)
+        #Sample dismenbering of the sampled block and return the result
+        return dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
+    elif kind_nei == 2: #Break interval
+        #Sample point to break on
+        point_break = tab_train_batch[rng.choice(np.arange(tab_train_batch.shape[0]),size = (1,),p = prob_break),:-num_classes][0,:]
+        interval_index = np.where(get_interval(point_break,intervals))[0]
+        #Break interval on sampled point and return the result
+        return break_interval(point_break,interval_index,intervals[interval_index,:].copy(),block[interval_index].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
 
 #Test if intervals contain/are contained
 def contained(I1,I2):
@@ -1043,21 +986,10 @@ def contained(I1,I2):
     logical
     """
     #I1 is contained in I2
-    I2_fixedI1 = jnp.where(I1 != -1,I2,-1)
-    I1_fixedI1 = jnp.where(I1 != -1,I1,-1)
-    I2_freeI1 = jnp.where(I1 == -1,I2,-1)
-    I1_freeI1 = jnp.where(I1 == -1,I1,-1)
-    c1 = jnp.logical_and(jnp.min(jnp.logical_or(I2_fixedI1 == I1_fixedI1,I2_fixedI1 == -1)),jnp.min(I2_freeI1 == -1))
+    c1 = np.sum(I2[I2 != -1] == I1[I2 != -1]) == np.sum(I2 != -1)
     #I2 is contained in I1
-    tmp = I1.copy()
-    I1 = I2
-    I2 = tmp
-    I2_fixedI1 = jnp.where(I1 != -1,I2,-1)
-    I1_fixedI1 = jnp.where(I1 != -1,I1,-1)
-    I2_freeI1 = jnp.where(I1 == -1,I2,-1)
-    I1_freeI1 = jnp.where(I1 == -1,I1,-1)
-    c2 = jnp.logical_and(jnp.min(jnp.logical_or(I2_fixedI1 == I1_fixedI1,I2_fixedI1 == -1)),jnp.min(I2_freeI1 == -1))
-    return jnp.logical_or(c1,c2)
+    c2 = np.sum(I1[I1 != -1] == I2[I1 != -1]) == np.sum(I1 != -1)
+    return np.logical_or(c1,c2)
 
 #Test if interval is contained/contain some interval
 def contained_some(I1,intervals):
@@ -1066,11 +998,11 @@ def contained_some(I1,intervals):
     -------
     Parameters
     ----------
-    I1 : jax.numpy.array
+    I1 : numpy.array
 
         Interval
 
-    intervals : jax.numpy.array
+    intervals : numpy.array
 
         Array of intervals
 
@@ -1078,4 +1010,4 @@ def contained_some(I1,intervals):
     -------
     logical
     """
-    return np.max(jax.vmap(lambda I2: contained(I1,I2))(intervals))
+    return np.max(np.apply_along_axis(lambda I2: contained(I1,I2),1,intervals))

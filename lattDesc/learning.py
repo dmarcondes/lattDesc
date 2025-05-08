@@ -6,9 +6,54 @@ import math
 import time
 from alive_progress import alive_bar
 import os
+from joblib import Parallel, delayed
+
+#Empirical risk minimization
+def ERM(train,test,unique = False,num_classes = 2):
+    """
+    Learning by empirical risk minimization
+    -------
+    Parameters
+    ----------
+    train : numpy.array
+
+        Array with training data. The last column contains the labels
+
+    test : numpy.array
+
+        Array with test data. The last column contains the labels
+
+    unique : logical
+
+        Whether the training data is unique, i.e., each input point appears only once in the data
+
+    num_classes : int
+
+        Number of classes
+
+    Returns
+    -------
+
+    """
+    #Table
+    tab_train = dt.get_ftable(train,unique,num_classes)
+    #Function for predicting
+    def f(x):
+        x_freq = tab_train[np.apply_along_axis(lambda z: (x == z).all(),1,tab_train[:,:-num_classes]),-num_classes:]
+        if x_freq.shape[0] > 0:
+            return np.random.choice(np.where((x_freq == np.max(x_freq))[0,:])[0],1)
+        else:
+            return -1
+
+    #Test error
+    error = None
+    if test is not None:
+        error = np.sum(np.apply_along_axis(f,1,test[:,:-1]) != test[:,-1])/test.shape[0]
+
+    return {'f': f,'test_error': error}
 
 #Stochastic Descent on the Boolean Interval Partition Lattice
-def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
+def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,test = None,n_jobs = 8,num_classes = 2,key = 0,unique = False,intervals = None,block = None,video = False,filename = 'video_sdesc_BIPL',framerate = 1):
     """
     Stochastic Lattice Descent Algorithm in the Boolean Interval Partition Lattice
     -------
@@ -41,6 +86,10 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
     test : numpy.array
 
         Array with test data. The last column contains the labels
+
+    n_jobs : int
+
+        Number of parallel jobs
 
     num_classes : int
 
@@ -143,6 +192,7 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                     train = rng.permutation(train,0) #Random permutation of training data
                     val = rng.permutation(val,0) #Random permutation of validation data
             for b in range(batches): #For each batch
+                t0 = time.time()
                 #Get frequency table of batch
                 tab_train_batch,tab_val_batch,bnval = ut.get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes)
 
@@ -160,39 +210,19 @@ def sdesc_BIPL(train,val,epochs = 10,sample = 10,batches = 1,batch_val = False,t
                 kind_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob_manners) #Sample kind of step to take at each sample neighbo
 
                 #Objects to store neighbors
-                store_nei = list() #Store neighbors
                 error_batch = np.array([]) #Store error
 
                 #Sample neighbors
-                for n in range(sample): #For each neighbor
-                    if kind_nei[n] == 0: #Unite intervals
-                        #Sample block to unite intervals
-                        unite = rng.choice(np.arange(np.max(block) + 1),size=(2,),replace = False)
+                if total_dismember == 0:
+                    total_dismember = 1
+                if total_break == 0:
+                    total_break = 1
+                n_key = np.round(rng.uniform(0,100000,(sample,))).astype(np.int32)
+                process = lambda n: ut.sample_visit_neighbor(kind_nei[n],dismember/total_dismember,break_points/total_break,block,intervals,bnval,tab_train_batch,tab_val_batch,np.random.default_rng(seed = n_key[n]),num_classes)
+                store_nei = Parallel(n_jobs = n_jobs)(delayed(process)(n) for n in range(sample))
+                for i in range(len(store_nei)):
+                    error_batch = np.append(error_batch,store_nei[i]['error'])
 
-                        #Sample intervals to unite in the sampled block and store the result
-                        store_nei.append(ut.unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
-
-                        #Store error
-                        error_batch = np.append(error_batch,store_nei[-1]['error'])
-                    elif kind_nei[n] == 1: #Dismenber intervals
-                        #Sample block to dismenber intervals
-                        b_dis = rng.choice(np.arange(np.max(block) + 1),size=(1,),p = dismember/total_dismember)
-
-                        #Sample dismenbering of the sampled block and store the result
-                        store_nei.append(ut.dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
-
-                        #Store error
-                        error_batch = np.append(error_batch,store_nei[-1]['error'])
-                    elif kind_nei[n] == 2: #Break interval
-                        #Sample point to break on
-                        point_break = tab_train_batch[rng.choice(np.arange(tab_train_batch.shape[0]),size = (1,),p = break_points/np.sum(break_points)),:-num_classes][0,:]
-                        interval_index = np.where(ut.get_interval(point_break,intervals))[0]
-
-                        #Break interval on sampled point and store the result
-                        store_nei.append(ut.break_interval(point_break,interval_index,intervals[interval_index,:].copy(),block[interval_index].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes))
-
-                        #Store error
-                        error_batch = np.append(error_batch,store_nei[-1]['error'])
                 #Update partition at each batch
                 which_nei = np.where(error_batch == np.min(error_batch))[0][0] #Get first neighbor with the least error
                 block = store_nei[which_nei]['block'].copy() #Update block
@@ -306,7 +336,7 @@ def ISI(train,test = None,intervals = None,unique = False,key = 0):
                         B_tmp = np.minimum(B,x)
                         interval_tmp = np.where((A == 0)*(B_tmp == 1),-1,A)
                         if del_intervals.shape[0] > 0:
-                            if not ut.contained_some(interval_tmp,del_intervals): #Test if new interval is maximal
+                            if not ut.contained_some(interval_tmp[0,:],del_intervals): #Test if new interval is maximal
                                 intervals = np.append(intervals,interval_tmp,0)
                         else:
                             intervals = np.append(intervals,interval_tmp,0)
@@ -316,7 +346,7 @@ def ISI(train,test = None,intervals = None,unique = False,key = 0):
                         A_tmp = np.maximum(A,x)
                         interval_tmp = np.where((A_tmp == 0)*(B == 1),-1,B)
                         if del_intervals.shape[0] > 0: #Test if new interval is maximal
-                            if not ut.contained_some(interval_tmp,del_intervals):
+                            if not ut.contained_some(interval_tmp[0,:],del_intervals):
                                 intervals = np.append(intervals,interval_tmp,0)
                         else:
                             intervals = np.append(intervals,interval_tmp,0)
@@ -327,23 +357,21 @@ def ISI(train,test = None,intervals = None,unique = False,key = 0):
     total_time = time.time() - tinit
 
     #Get estimated function
-    f = lambda x: int(ut.get_elements_some_interval(intervals,x.reshape((1,d)))[0])
+    f = lambda data: int(ut.get_elements_some_interval(intervals,x)[0])
 
     #Test error
     test_error = None #Initialize test error
     if test is not None: #Compute test error if there is test data
         tab_test = dt.get_ftable(test,unique,2)
-        pred = []
-        for i in range(test.shape[0]):
-            pred = pred + [f(test[i,:-1])]
+        pred = f(test) #np.apply_along_axis(f,1,test[:,:-1])
         test_error = np.sum(np.abs(np.array(pred) - test[:,-1]))/test.shape[0]
 
     return {'basis': intervals,'f': f,'test_error': test_error,'time': total_time}
 
 #Disjoint ISI algorithm
-def disjoint_ISI(train,intervals = None,unique = False,key = 0):
+def disjoint_ISI(train,intervals = None,block = None,unique = False,key = 0):
     """
-    Incremental Splitting of Intervals (ISI)
+    Disjoint Incremental Splitting of Intervals (ISI)
     -------
     Parameters
     ----------
@@ -391,15 +419,16 @@ def disjoint_ISI(train,intervals = None,unique = False,key = 0):
 
     #Initialize step and error
     step = 1
-    error = ut.error_partition(tab_train,tab_train,intervals,block,train.shape[0],key,num_classes = 2)
+    error = ut.error_partition(tab_train,tab_train,intervals,block,train.shape[0],rng,num_classes = 2)
 
     #Probability of each interval
     pzero = np.sum(np.logical_and(ut.get_elements_each_interval(intervals,zero_points),1 - ut.get_limits_each_interval(intervals,zero_points)),1) #Zero points in each interval that are not limits
     pone = np.sum(np.logical_and(ut.get_elements_each_interval(intervals,one_points),1 - ut.get_limits_each_interval(intervals,one_points)),1) #One points in each interval that are not limits
     prob = np.where(pone == 0,0,pzero) + np.where(pzero == 0,0,pone) #Number of points in each interval that contains both zero and one points that are not limits
     print('- Running...')
+    tinit = time.time()
     while(np.sum(prob) > 0): #While there are intervals containing both zero and one points
-        print('Step ' + str(step) + ' Error = ' + str(round(error,5)))
+        print('Step ' + str(step) + ' Time: ' + str(np.round(time.time() - tinit,2)))
         #Normalize probability
         prob = prob.astype('float64')
         prob = prob/np.sum(prob)
@@ -410,11 +439,13 @@ def disjoint_ISI(train,intervals = None,unique = False,key = 0):
         k = rng.choice(np.where(log)[0],size = 1) #Sample point in interval
         #Break interval
         point_break = tab_train[k,:d]
-        res_break = ut.break_interval(point_break,i,intervals[i,:].copy(),block[i].copy(),intervals.copy(),block.copy(),tab_train.shape[0],tab_train,tab_train,step = True,key = int(rng.choice(np.arange(1e6))),num_classes = 2)
+        res_break = ut.break_interval(point_break,i,intervals[i,:].copy(),block[i].copy(),intervals.copy(),block.copy(),train.shape[0],tab_train,tab_train,step = True,rng = rng,num_classes = 2)
         intervals = res_break['intervals'].copy()
-        block = ut.estimate_label_partition(tab_train,intervals,np.arange(intervals.shape[0]),num_classes = 2,key = 0).astype(np.int32)
+        block = ut.estimate_label_partition(tab_train,intervals,np.arange(intervals.shape[0]),rng,num_classes = 2).astype(np.int32)
+        if np.min(block) == 1:
+            block = block - 1
         #Reduce one block
-        if np.sum(block == 1) > 1:
+        if np.sum(block == 1) > 1 and np.sum(block == 1) >= 1:
             reduced = False
         else:
             reduced = True
@@ -422,7 +453,7 @@ def disjoint_ISI(train,intervals = None,unique = False,key = 0):
         while(not reduced):
             intervals_one,reduced = ut.reduce(intervals_one)
         #Reduce zero block
-        if np.sum(block == 0) > 1:
+        if np.sum(block == 0) > 1 and np.sum(block == 0) >= 1:
             reduced = False
         else:
             reduced = True
@@ -431,12 +462,16 @@ def disjoint_ISI(train,intervals = None,unique = False,key = 0):
             intervals_zero,reduced = ut.reduce(intervals_zero)
         #Update intervals and blocks as reduced
         intervals = np.append(intervals_one,intervals_zero,0)
-        block = ut.estimate_label_partition(tab_train,intervals,np.arange(intervals.shape[0]),num_classes = 2,key = 0).astype(np.int32)
+        block = np.append(1 + np.zeros((intervals_one.shape[0],)),np.zeros((intervals_zero.shape[0],))).astype(np.int32)
+        if np.min(block) == 1:
+            block = block - 1
         #Probability of each interval
         pzero = np.sum(np.logical_and(ut.get_elements_each_interval(intervals,zero_points),1 - ut.get_limits_each_interval(intervals,zero_points)),1)
         pone = np.sum(np.logical_and(ut.get_elements_each_interval(intervals,one_points),1 - ut.get_limits_each_interval(intervals,one_points)),1)
         prob = np.where(pone == 0,0,pzero) + np.where(pzero == 0,0,pone)
-        #Update error and step
-        error = ut.error_partition(tab_train,tab_train,intervals,block,train.shape[0],key,num_classes = 2)
+        #Update step
         step = step + 1
-    return {'intervals': intervals,'block': block,'error': error,'step': step - 1,'f': ut.get_estimated_function(tab_train,intervals,block,num_classes = 2,key = key)}
+    total_time = time.time() - tinit
+    error = ut.error_partition(tab_train,tab_train,intervals,block,train.shape[0],rng,num_classes = 2)
+
+    return {'intervals': intervals,'block': block,'error': error,'step': step - 1,'f': ut.get_estimated_function(tab_train,intervals,block,rng,num_classes = 2),'time': total_time}
