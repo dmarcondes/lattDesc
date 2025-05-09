@@ -4,39 +4,16 @@ import time
 from lattDesc import data as dt
 import math
 
-import jax #Erase
-
 #Get frequency table of batch
-def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,unique,batch_val,nval,num_classes = 2):
+def get_tfrequency_batch(tab_train,tab_val,bsize,bsize_val,batch_val,nval,rng,num_classes = 2):
     """
-    Get frequency tables of a batch
+    Sample the frequency table of a batch
     -------
-
     Parameters
     ----------
-    b : int
+    tab_train,tab_val : numpy.array
 
-        Index of batch
-
-    batches : int
-
-        Number of batches
-
-    tab_train : numpy.array
-
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
-
-    tab_val : numpy.array
-
-        Frequency table of validation data. Each row refers to an input point and the last num_classes columns refer to label frequencies
-
-    train : numpy.array
-
-        Array with training data. The last column contains the labels
-
-    val : numpy.array
-
-        Array with validation data. The last column contains the labels
+        Array with the frequency table of training and validation data
 
     bsize : int
 
@@ -46,10 +23,6 @@ def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,u
 
         Batch size of validation
 
-    unique : logical
-
-        Whether the data is unique, i.e., each input point appears only once in the data
-
     batch_val : logical
 
         Whether to consider batches for the validation data
@@ -58,58 +31,53 @@ def get_tfrequency_batch(b,batches,tab_train,tab_val,train,val,bsize,bsize_val,u
 
         Size of validation sample
 
-    num_classes : int
-
-        Number of classes
-
     Returns
     -------
-        numpy.arrays of tab_train_batch and tab_val_batch and the batch validation sample size bnval
+    numpy.arrays of tab_train,tab_train_batch,tab_val,tab_val_batch and the batch validation sample size bnval
     """
-    if batches > 1:
-        if b < batches - 1: #If it is not last batch
-            if unique: #If data is unique, batch of frequency table
-                tab_train_batch = tab_train[(b*bsize):((b+1)*bsize),:] #Get frequency table of batch
-            else: #Else, compute frequency table of data batch
-                tab_train_batch = dt.get_ftable(train[(b*bsize):((b+1)*bsize),:],unique,num_classes) #Compute frequency table of batch
-        else: #For the last batch
-            if unique: #If data is unique, batch of frequency table
-                tab_train_batch = tab_train[(b*bsize):,:] #Get frequency table of batch
-            else: #Else, compute frequency table of data batch
-                tab_train_batch = dt.get_ftable(train[(b*bsize):,:],unique,num_classes) #Compute frequency table of batch
-        if batch_val: #If batches for validation should be considered
-            if b < batches - 1: #If it is not last batch
-                if unique: #If data is unique, batch of frequency table
-                    tab_val_batch = tab_val[(b*bsize_val):((b+1)*bsize_val),:] #Get frequency table of batch
-                else: #Else, compute frequency table of data batch
-                    tab_val_batch = dt.get_ftable(val[(b*bsize_val):((b+1)*bsize_val),:],unique,num_classes) #Compute frequency table of batch
-            else: #For the last batch
-                if unique: #If data is unique, batch of frequency table
-                    tab_val_batch = tab_val[(b*bsize_val):,:] #Get frequency table of batch
-                else: #Else, compute frequency table of data batch
-                    tab_val_batch = dt.get_ftable(val[(b*bsize_val):,:],unique,num_classes) #Compute frequency table of batch
-            bnval = np.sum(tab_val_batch[:,-num_classes:])
-        else: #No batch for validation
-            tab_val_batch = tab_val #Copy frequency table
-            bnval = nval #Copy validation sample size
-        return tab_train_batch,tab_val_batch,bnval
+    #Sample points in training sample that will be in the batch
+    ids = np.sort(rng.choice(np.arange(np.sum(tab_train[:,-num_classes:])),size = (bsize,1),replace = False),0)
+    #Find the sampled points in the frequencey table
+    vector_tab_train = tab_train[:,-num_classes:].reshape((tab_train.shape[0]*num_classes))
+    pos_ids = np.apply_along_axis(lambda id: np.min(np.where(np.cumsum(vector_tab_train) >= id)[0]),1,ids)
+    #Build batch frequency table
+    tab_train_batch = np.append(tab_train[:,:-num_classes],np.bincount(pos_ids,minlength = vector_tab_train.shape[0]).reshape((tab_train.shape[0],num_classes)),1)
+    #Erase sample points from the training table so they cannot be sampled in another batch
+    tab_train[:,-num_classes:] = tab_train[:,-num_classes:] - tab_train_batch[:,-num_classes:]
+    #Keep only points that appear in the batch
+    tab_train_batch = tab_train_batch[np.sum(tab_train_batch[:,-num_classes:],1) > 0,:]
+
+    #Sample points validation sample
+    if batch_val:
+        #Sample points in validation sample that will be in the batch
+        ids = np.sort(rng.choice(np.arange(np.sum(tab_val[:,-num_classes:])),size = (bsize_val,1),replace = False),0)
+        #Find the sampled points in the frequencey table
+        vector_tab_val = tab_val[:,-num_classes:].reshape((tab_val.shape[0]*num_classes))
+        pos_ids = np.apply_along_axis(lambda id: np.min(np.where(np.cumsum(vector_tab_val) >= id)[0]),1,ids)
+        #Build batch frequency table
+        tab_val_batch = np.append(tab_val[:,:-num_classes],np.bincount(pos_ids,minlength = vector_tab_val.shape[0]).reshape((tab_val.shape[0],num_classes)),1)
+        #Erase sample points from the validation table so they cannot be sampled in another batch
+        tab_val[:,-num_classes:] = tab_val[:,-num_classes:] - tab_val_batch[:,-num_classes:]
+        #Keep only points that appear in the batch
+        tab_val_batch = tab_val_batch[np.sum(tab_val_batch[:,-num_classes:],1) > 0,:]
+        #Update size of validation sample
+        bnval = np.sum(tab_val_batch[:,-num_classes:])
     else:
-        return tab_train,tab_val,nval
+        tab_val_batch = tab_val
+        bnval = nval
+
+    return tab_train,tab_train_batch,tab_val,tab_val_batch,bnval
 
 #Teste partial order
 def partial_order(x,y):
     """
-    Test if x <= y
+    Test if x <= y for x and y in a Boolean lattice
     -------
     Parameters
     ----------
-    x : numpy.array
+    x,y : numpy.array
 
-        Point
-
-    y : numpy.array
-
-        Point
+        Points in a Boolean lattice
 
     Returns
     -------
@@ -120,7 +88,7 @@ def partial_order(x,y):
 #Test if element is in interval
 def test_interval(interval,x):
     """
-    Test if element is in interval
+    Test if element x is in interval
     -------
     Parameters
     ----------
@@ -141,7 +109,7 @@ def test_interval(interval,x):
 #Test if element is not in interval
 def test_not_interval(interval,x):
     """
-    Test if element is not in interval
+    Test if element x is not in interval
     -------
     Parameters
     ----------
@@ -159,7 +127,7 @@ def test_not_interval(interval,x):
     """
     return not test_interval(interval,x)
 
-#Test if element is limit of interval (we know it is in interval)
+#Test if element is limit of interval (assume it is in interval)
 def test_limit_interval(interval,x):
     """
     Test if element is the limit of interval
@@ -185,7 +153,7 @@ def test_limit_interval(interval,x):
 #Get limits of interval
 def get_limits_interval(interval,data):
     """
-    Flag the points in the data that are limits of interval
+    Flag the points in dataset that are limits of interval
     -------
     Parameters
     ----------
@@ -195,7 +163,7 @@ def get_limits_interval(interval,data):
 
     data : numpy.array
 
-        Data
+        Dataset
 
     Returns
     -------
@@ -208,12 +176,11 @@ def get_limits_each_interval(intervals,data):
     """
     Flag the elements in dataset that are the limits of each interval
     -------
-
     Parameters
     ----------
     intervals : numpy.array
 
-        Intervals
+        Array of intervals
 
     data : numpy.array
 
@@ -221,15 +188,14 @@ def get_limits_each_interval(intervals,data):
 
     Returns
     -------
-
-    jax.numpy.array of logical
+    numpy.array of logical
     """
     return np.apply_along_axis(lambda interval: get_limits_interval(interval,data),1,intervals)
 
 #Get elements that are limit of some interval
 def get_limits_some_interval(intervals,data):
     """
-    Flag the points in the data that are limits of some interval in a array
+    Flag the points in dataset that are limits of some interval in a array
     -------
     Parameters
     ----------
@@ -239,7 +205,7 @@ def get_limits_some_interval(intervals,data):
 
     data : numpy.array
 
-        Data
+        Dataset
 
     Returns
     -------
@@ -260,7 +226,7 @@ def get_interval(point,intervals):
 
     intervals : numpy.array
 
-        Intervals
+        Array of intervals
 
     Returns
     -------
@@ -273,7 +239,6 @@ def get_elements_interval(interval,data):
     """
     Flag the elements in dataset that are in an interval
     -------
-
     Parameters
     ----------
     interval : numpy.array
@@ -295,12 +260,11 @@ def get_elements_each_interval(intervals,data):
     """
     Flag the elements in dataset that are in each interval
     -------
-
     Parameters
     ----------
     intervals : numpy.array
 
-        Intervals
+        Array of intervals
 
     data : numpy.array
 
@@ -325,7 +289,7 @@ def get_elements_some_interval(intervals,data):
 
     data : numpy.array
 
-        Data
+        Dataset
 
     Returns
     -------
@@ -336,17 +300,13 @@ def get_elements_some_interval(intervals,data):
 #Compute error
 def val_error(tab_train,tab_val,nval,rng,num_classes = 2):
     """
-    Compute the validation error
+    Compute the validation error for given training and validation frequency tables
     -------
     Parameters
     ----------
-    tab_train : numpy.array
+    tab_train,tab_val : numpy.array
 
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
-
-    tab_val : numpy.array
-
-        Frequency table of validation data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+        Array with the frequency table of training and validation data
 
     nval : int
 
@@ -365,8 +325,7 @@ def val_error(tab_train,tab_val,nval,rng,num_classes = 2):
     float
     """
     freq = np.sum(tab_train[:,-num_classes:],0)
-    pred = freq == np.max(freq)
-    p = np.where(pred,1,0)
+    p = np.where(freq == np.max(freq),1,0)
     pred = rng.choice(np.arange(num_classes),size = (1,),p = p/np.sum(p))
     freq_val = np.sum(tab_val[:,-num_classes:],0)
     err = np.sum(freq_val[np.arange(num_classes) != pred])
@@ -385,7 +344,7 @@ def ftable_block(intervals,tab,num_classes = 2):
 
     tab : numpy.array
 
-        Frequency table. Each row refers to an input point and the num_classes columns refer to label frequencies
+        Array with a frequency table
 
     num_classes : int
 
@@ -395,7 +354,7 @@ def ftable_block(intervals,tab,num_classes = 2):
     -------
     numpy.array
     """
-    tab_block = tab[get_elements_some_interval(intervals,tab[:,0:-num_classes,]),:]
+    tab_block = tab[get_elements_some_interval(intervals,tab[:,:-num_classes,]),:]
     return np.sum(tab_block[:,-num_classes:],0)
 
 #Get label of each interval
@@ -407,7 +366,7 @@ def estimate_label_block(tab_train,intervals,rng,num_classes = 2):
     ----------
     tab_train : numpy.array
 
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+        Array with the frequency table of training
 
     intervals : numpy.array
 
@@ -426,8 +385,7 @@ def estimate_label_block(tab_train,intervals,rng,num_classes = 2):
     numpy.array
     """
     tab_train = ftable_block(intervals,tab_train,num_classes)
-    pred = tab_train == np.max(tab_train)
-    p = np.where(pred,1,0)
+    p = np.where(tab_train == np.max(tab_train),1,0)
     pred = rng.choice(np.arange(num_classes),size = (1,),p = p/np.sum(p))
     return pred
 
@@ -440,7 +398,7 @@ def estimate_label_partition(tab_train,intervals,block,rng,num_classes = 2):
     ----------
     tab_train : numpy.array
 
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+        Array with the frequency table of training
 
     intervals : numpy.array
 
@@ -478,7 +436,7 @@ def get_estimated_function(tab_train,intervals,block,rng,num_classes = 2):
     ----------
     tab_train : numpy.array
 
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+        Array with the frequency table of training
 
     intervals : numpy.array
 
@@ -496,13 +454,9 @@ def get_estimated_function(tab_train,intervals,block,rng,num_classes = 2):
 
         Number of classes
 
-    key : int
-
-        Seed for random classification in the presence of ties
-
     Returns
     -------
-    jax.numpy.array
+    numpy.array
     """
     label_blocks = estimate_label_partition(tab_train,intervals,block,rng,num_classes)
     def f(point):
@@ -516,13 +470,9 @@ def error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes = 2):
     -------
     Parameters
     ----------
-    tab_train : numpy.array
+    tab_train,tab_val : numpy.array
 
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
-
-    tab_val : numpy.array
-
-        Frequency table of validation data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+        Array with the frequency table of training and validation data
 
     intervals : numpy.array
 
@@ -606,7 +556,7 @@ def get_sup(point,interval):
     -------
     numpy.array
     """
-    return np.where(np.logical_and(interval == -1.0,point == 1.0),-1.0,point)
+    return np.where(np.logical_and(interval == -1,point == 1),-1,point)
 
 #Get interval as inf
 def get_inf(point,interval):
@@ -627,7 +577,7 @@ def get_inf(point,interval):
     -------
     numpy.array
     """
-    return np.where(np.logical_and(interval == -1.0,point == 0.0),-1.0,point)
+    return np.where(np.logical_and(interval == -1,point == 0),-1,point)
 
 #Sample interval
 def sample_break_interval(point_break,interval_break,rng):
@@ -701,12 +651,12 @@ def update_partition(b_break,intervals,cover_intervals,block,index_interval,divi
     -------
     numpy.arrays of intervals and block
     """
-    intervals = np.append(intervals,cover_intervals,0)
-    intervals = np.delete(intervals,index_interval,0)
-    max_block = np.max(block)
-    block = np.delete(block,index_interval)
-    block = np.where(block == b_break,division_old,block)
-    block = np.append(block,np.where(division_new == 0,b_break,max_block + 1))
+    intervals = np.append(intervals,cover_intervals,0) #Add new intervals
+    intervals = np.delete(intervals,index_interval,0) #Delete broken interval
+    max_block = np.max(block) #Maximum block
+    block = np.delete(block,index_interval) #Delete block of broken interval
+    block = np.where(block == b_break,division_old,block) #New block of the kept intervals
+    block = np.append(block,np.where(division_new == 0,b_break,max_block + 1)) #Block of the new intervals
     return intervals,block
 
 #One step reduction
@@ -718,7 +668,7 @@ def reduce(intervals):
     ----------
     intervals : numpy.array
 
-        Intervals of partition
+        Intervals of a block
 
     Returns
     -------
@@ -728,14 +678,14 @@ def reduce(intervals):
         for j in range(i + 1,intervals.shape[0]):
             if (np.where(intervals[i,:] == -1,1,0) == np.where(intervals[j,:] == -1,1,0)).all():
                 if np.sum(intervals[i,:] != intervals[j,:]) == 1:
-                    united = np.where(intervals[i,:] != intervals[j,:],-1.0,intervals[i,:])
+                    united = np.where(intervals[i,:] != intervals[j,:],-1,intervals[i,:])
                     intervals = np.delete(intervals,np.array([i,j]),0)
                     intervals = np.append(intervals,united.reshape((1,united.shape[0])),0)
                     return intervals,False
     return intervals,True
 
-#Sample neighbor
-def break_interval(point_break,index_interval,interval_break,b_break,intervals,block,nval,tab_train,tab_val,step,rng,num_classes = 2):
+#Sample neighbor by breaking interval
+def break_interval(point_break,index_interval,interval_break,b_break,intervals,block,nval,tab_train,tab_val,step,rng,num_classes = 2,compute_error = True):
     """
     Break an interval on an internal point to get a neighbor
     -------
@@ -759,7 +709,7 @@ def break_interval(point_break,index_interval,interval_break,b_break,intervals,b
 
     intervals : numpy.array
 
-        Intervals
+        Array of intervals
 
     block : numpy.array
 
@@ -769,13 +719,9 @@ def break_interval(point_break,index_interval,interval_break,b_break,intervals,b
 
         Validation sample size
 
-    tab_train : numpy.array
+    tab_train,tab_val : numpy.array
 
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
-
-    tab_val : numpy.array
-
-        Frequency table of validation data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+        Array with the frequency table of training and validation data
 
     step : logical
 
@@ -789,6 +735,10 @@ def break_interval(point_break,index_interval,interval_break,b_break,intervals,b
 
         Number of classes
 
+    compute_error : logical
+
+        Whether to compute the updated partition error
+
     Returns
     -------
     numpy.arrays of intervals and block and/or the error of the sampled partition
@@ -797,7 +747,7 @@ def break_interval(point_break,index_interval,interval_break,b_break,intervals,b
     new_interval = sample_break_interval(point_break,interval_break,rng)
 
     #Compute interval cover of complement
-    where_fill = np.where(np.logical_and(new_interval != -1.0,interval_break == -1.0))[1]
+    where_fill = np.where(np.logical_and(new_interval != -1,interval_break == -1))[1]
     where_fill = rng.permutation(where_fill)
     cover_intervals = cover_break_interval(new_interval.copy(),where_fill)
 
@@ -809,7 +759,10 @@ def break_interval(point_break,index_interval,interval_break,b_break,intervals,b
     intervals,block = update_partition(b_break,intervals,cover_intervals,block,index_interval,division_old,division_new)
 
     #Compute error
-    error = error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes)
+    if compute_error:
+        error = error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes)
+    else:
+        error = None
 
     #Return
     if not step:
@@ -824,15 +777,15 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,rng,num_class
     -------
     Parameters
     ----------
-    unite : jax.numpy.array
+    unite : numpy.array
 
         Which blocks to unite
 
-    intervals : jax.numpy.array
+    intervals : numpy.array
 
-        Intervals
+        Array of intervals
 
-    block : jax.numpy.array
+    block : numpy.array
 
         Block of each interval
 
@@ -840,13 +793,9 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,rng,num_class
 
         Validation sample size
 
-    tab_train : jax.numpy.array
+    tab_train,tab_val : numpy.array
 
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
-
-    tab_val : jax.numpy.array
-
-        Frequency table of validation data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+        Array with the frequency table of training and validation data
 
     step : logical
 
@@ -902,7 +851,7 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,rng,num_cl
 
     intervals : numpy.array
 
-        Intervals
+        Array of intervals
 
     block : numpy.array
 
@@ -912,13 +861,9 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,rng,num_cl
 
         Validation sample size
 
-    tab_train : numpy.array
+    tab_train,tab_val : numpy.array
 
-        Frequency table of training data. Each row refers to an input point and the last num_classes columns refer to label frequencies
-
-    tab_val : numpy.array
-
-        Frequency table of validation data. Each row refers to an input point and the last num_classes columns refer to label frequencies
+        Array with the frequency table of training and validation data
 
     step : logical
 
@@ -934,7 +879,7 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,rng,num_cl
 
     Returns
     -------
-    jax.numpy.arrays of intervals and block and/or the error of the sampled partition
+    numpy.arrays of intervals and block and/or the error of the sampled partition
     """
     #How to dismenber
     max_block = np.max(block) + 1
@@ -977,7 +922,7 @@ def contained(I1,I2):
     -------
     Parameters
     ----------
-    I1,I2 : jax.numpy.array
+    I1,I2 : numpy.array
 
         Intervals
 
