@@ -2,7 +2,9 @@
 import numpy as np
 import time
 from lattDesc import data as dt
+from lattDesc import learning as ipl
 import math
+import pickle
 
 #Get frequency table of batch
 def get_tfrequency_batch(tab_train,tab_val,bsize,bsize_val,batch_val,nval,rng,num_classes = 2):
@@ -956,3 +958,65 @@ def contained_some(I1,intervals):
     logical
     """
     return np.max(np.apply_along_axis(lambda I2: contained(I1,I2),1,intervals))
+
+def run_experiment(tab_train,tab_val,tab_test,tab_tv,batches,sample,epochs,path_sufix,ISI = True):
+    #Train by ERM
+    print('ERM')
+    res_erm = ipl.ERM(tab_train = tab_train,tab_test = tab_test)
+    print(res_erm['test_error'])
+    print('ERM tv')
+    res_erm_tv = ipl.ERM(tab_train = tab_tv,tab_test = tab_test)
+    print(res_erm_tv['test_error'])
+    res_erm['f'] = None
+    res_erm_tv['f'] = None
+    with open('results/ERM_' + path_sufix + '.pkl', 'wb') as f:
+        pickle.dump(res_erm, f)
+    with open('results/ERM_tv_' + path_sufix + '.pkl', 'wb') as f:
+        pickle.dump(res_erm_tv, f)
+
+    #Train with ISI
+    if ISI:
+        res_ISI = ipl.ISI(tab_train = tab_train,tab_test = tab_test)
+        print(res_ISI['test_error'])
+        res_ISI_tv = ipl.ISI(tab_train = tab_tv,tab_test = tab_test)
+        print(res_ISI_tv['test_error'])
+        res_ISI['f'] = None
+        res_ISI_tv['f'] = None
+        with open('results/ISI_' + path_sufix + '.pkl', 'wb') as f:
+            pickle.dump(res_ISI, f)
+        with open('results/ISI_tv_' + path_sufix + '.pkl', 'wb') as f:
+            pickle.dump(res_ISI_tv, f)
+
+    #Lattice descent starting from unitary partition
+    res_LDA = ipl.sdesc_BIPL(tab_train = tab_train,tab_val = tab_val,tab_test = tab_test,epochs = epochs,sample = sample,key = 0,batches = batches,num_classes = 2,n_jobs = sample)
+    print(res_LDA['test_error'])
+    res_LDA['f'] = None
+    with open('results/LDA_' + path_sufix + '.pkl', 'wb') as f:
+        pickle.dump(res_LDA, f)
+
+    #Lattice descent starting from unitary partition
+    res_LDA_tv = ipl.sdesc_BIPL(tab_train = tab_tv,tab_val = tab_tv,tab_test = tab_test,epochs = epochs,sample = sample,key = 0,batches = batches,num_classes = 2,n_jobs = sample)
+    print(res_LDA_tv['test_error'])
+    res_LDA_tv['f'] = None
+    with open('results/LDA_tv_' + path_sufix + '.pkl', 'wb') as f:
+        pickle.dump(res_LDA_tv, f)
+
+    #Lattice descent with pre-training
+    init = ipl.disjoint_ISI(tab_train = tab_train)
+    res_LDAPre = ipl.sdesc_BIPL(intervals = init['intervals'],block = init['block'],tab_train = tab_train,tab_val = tab_val,tab_test = tab_test,epochs = epochs,sample = sample,key = 0,batches = batches,num_classes = 2,n_jobs = sample)
+    print(res_LDAPre['test_error'])
+    init_tv = ipl.disjoint_ISI(tab_train = tab_tv)
+    res_LDAPre_tv = ipl.sdesc_BIPL(intervals = init_tv['intervals'],block = init_tv['block'],tab_train = tab_tv,tab_val = tab_tv,tab_test = tab_test,epochs = epochs,sample = sample,key = 0,batches = batches,num_classes = 2,n_jobs = sample)
+    print(res_LDAPre_tv['test_error'])
+    res_LDAPre['f'] = None
+    res_LDAPre_tv['f'] = None
+    init['f'] = None
+    init_tv['f'] = None
+    with open('results/LDAPre_' + path_sufix + '.pkl', 'wb') as f:
+        pickle.dump(res_LDAPre, f)
+    with open('results/LDAPre_tv_' + path_sufix + '.pkl', 'wb') as f:
+        pickle.dump(res_LDAPre_tv, f)
+    with open('results/init_' + path_sufix + '.pkl', 'wb') as f:
+        pickle.dump(init, f)
+    with open('results/init_tv_' + path_sufix + '.pkl', 'wb') as f:
+        pickle.dump(init_tv, f)
