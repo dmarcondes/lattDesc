@@ -5,6 +5,48 @@ from lattDesc import data as dt
 from lattDesc import learning as ipl
 import math
 import pickle
+from numba import jit
+import copy
+
+#Array list class (from https://stackoverflow.com/questions/7133885/fastest-way-to-grow-a-numpy-numeric-array)
+class alist:
+    def __init__(self,ncol):
+        self.data = np.zeros((ncol*10000,))
+        self.capacity = ncol*10000
+        self.size = 0
+        self.ncol = ncol
+
+    def update(self, row):
+        for r in row:
+            self.add(r)
+
+    def add(self, x):
+        if self.size == self.capacity:
+            self.capacity *= 2
+            newdata = np.zeros((int(self.capacity),))
+            newdata[:self.size] = self.data
+            self.data = newdata
+
+        self.data[self.size] = x
+        self.size += 1
+
+    def delete(self,where):
+        data = self.data
+        data = np.reshape(data, shape = (int(data.shape[0]/self.ncol), int(self.ncol)))
+        if where.shape[0] == data.shape[0]:
+            data = data[(1 - where).astype('bool').tolist() + [True] * (data.shape[0] - where.shape[0]),:]
+            self.data = np.reshape(data, shape = (int(self.capacity - self.ncol * np.sum(where)),))
+            self.size -= int(np.sum(where).tolist() * self.ncol)
+            self.capacity -= self.ncol * np.sum(where)
+        else:
+            data = np.delete(data,where,0)
+            self.data = np.reshape(data, shape = (int(self.capacity - self.ncol * where.shape[0]),))
+            self.size -= int(where.shape[0] * self.ncol)
+            self.capacity -= self.ncol * where.shape[0]
+
+    def finalize(self):
+        data = self.data[:self.size]
+        return np.reshape(data, shape = (int(self.size/self.ncol), int(self.ncol)))
 
 #Get frequency table of batch
 def get_tfrequency_batch(tab_train,tab_val,bsize,bsize_val,batch_val,nval,rng,num_classes = 2):
@@ -71,6 +113,7 @@ def get_tfrequency_batch(tab_train,tab_val,bsize,bsize_val,batch_val,nval,rng,nu
     return tab_train,tab_train_batch,tab_val,tab_val_batch,bnval
 
 #Teste partial order
+@jit(nopython=True)
 def partial_order(x,y):
     """
     Test if x <= y for x and y in a Boolean lattice
@@ -88,6 +131,7 @@ def partial_order(x,y):
     return np.sum(x <= y) == x.shape[0]
 
 #Test if element is in interval
+@jit(nopython=True)
 def test_interval(interval,x):
     """
     Test if element x is in interval
@@ -109,6 +153,7 @@ def test_interval(interval,x):
     return np.sum(x[interval != -1] != interval[interval != -1]) == 0
 
 #Test if element is not in interval
+@jit(nopython=True)
 def test_not_interval(interval,x):
     """
     Test if element x is not in interval
@@ -130,6 +175,7 @@ def test_not_interval(interval,x):
     return not test_interval(interval,x)
 
 #Test if element is limit of interval (assume it is in interval)
+@jit(nopython=True)
 def test_limit_interval(interval,x):
     """
     Test if element is the limit of interval
@@ -153,6 +199,7 @@ def test_limit_interval(interval,x):
     return (np.sum(x == x_max) == x.shape[0]) or (np.sum(x == x_min) == x.shape[0])
 
 #Get limits of interval
+@jit(nopython=True)
 def get_limits_interval(interval,data):
     """
     Flag the points in dataset that are limits of interval
@@ -171,9 +218,13 @@ def get_limits_interval(interval,data):
     -------
     numpy.array of logical
     """
-    return np.apply_along_axis(lambda x: test_limit_interval(interval,x),1,data)
+    flag = np.zeros((data.shape[0],))
+    for i in range(data.shape[0]):
+        flag[i] = test_limit_interval(interval,data[i,:])
+    return flag #np.apply_along_axis(lambda x: test_limit_interval(interval,x),1,data)
 
 #Get limits of each interval
+@jit(nopython=True)
 def get_limits_each_interval(intervals,data):
     """
     Flag the elements in dataset that are the limits of each interval
@@ -192,9 +243,13 @@ def get_limits_each_interval(intervals,data):
     -------
     numpy.array of logical
     """
-    return np.apply_along_axis(lambda interval: get_limits_interval(interval,data),1,intervals)
+    flag = np.zeros((intervals.shape[0],data.shape[0]))
+    for i in range(intervals.shape[0]):
+        flag[i,:] = get_limits_interval(intervals[i,:],data)
+    return flag #np.apply_along_axis(lambda interval: get_limits_interval(interval,data),1,intervals)
 
 #Get elements that are limit of some interval
+@jit(nopython=True)
 def get_limits_some_interval(intervals,data):
     """
     Flag the points in dataset that are limits of some interval in a array
@@ -216,9 +271,10 @@ def get_limits_some_interval(intervals,data):
     return np.sum(get_limits_each_interval(intervals,data),0) > 0
 
 #Flag interval that contain point
+@jit(nopython=True)
 def get_interval(point,intervals):
     """
-    Flag interval that constains a point
+    Flag interval that contains a point
     -------
     Parameters
     ----------
@@ -234,9 +290,13 @@ def get_interval(point,intervals):
     -------
     numpy.array of logical
     """
-    return np.apply_along_axis(lambda interval: test_interval(interval,point),1,intervals)
+    flag = np.zeros((intervals.shape[0],))
+    for i in range(intervals.shape[0]):
+        flag[i] = test_interval(intervals[i,:],point)
+    return flag #np.apply_along_axis(lambda interval: test_interval(interval,point),1,intervals)
 
 #Get elements in interval
+@jit(nopython=True)
 def get_elements_interval(interval,data):
     """
     Flag the elements in dataset that are in an interval
@@ -255,9 +315,13 @@ def get_elements_interval(interval,data):
     -------
     numpy.array of logical
     """
-    return np.apply_along_axis(lambda x: test_interval(interval,x),1,data)
+    flag = np.zeros((data.shape[0],))
+    for i in range(data.shape[0]):
+        flag[i] = test_interval(interval,data[i,:])
+    return flag #np.apply_along_axis(lambda x: test_interval(interval,x),1,data)
 
 #Get elements in each interval
+@jit(nopython=True)
 def get_elements_each_interval(intervals,data):
     """
     Flag the elements in dataset that are in each interval
@@ -276,9 +340,13 @@ def get_elements_each_interval(intervals,data):
     -------
     numpy.array of logical
     """
-    return np.apply_along_axis(lambda interval: get_elements_interval(interval,data),1,intervals)
+    flag = np.zeros((intervals.shape[0],data.shape[0]))
+    for i in range(intervals.shape[0]):
+        flag[i,:] = get_elements_interval(intervals[i,:],data)
+    return flag #np.apply_along_axis(lambda interval: get_elements_interval(interval,data),1,intervals)
 
 #Get elements in some interval
+@jit(nopython=True)
 def get_elements_some_interval(intervals,data):
     """
     Flag the elements in dataset that are in some interval in an array
@@ -334,6 +402,7 @@ def val_error(tab_train,tab_val,nval,rng,num_classes = 2):
     return err/nval
 
 #Frequency table of block
+@jit(nopython=True)
 def ftable_block(intervals,tab,num_classes = 2):
     """
     Frequency table of a block
@@ -540,6 +609,7 @@ def cover_break_interval(new_interval,where_fill):
     return cover_intervals
 
 #Get interval as sup
+@jit(nopython=True)
 def get_sup(point,interval):
     """
     Get interval [A,X] given interval [A,B] and point X in [A,B]
@@ -561,6 +631,7 @@ def get_sup(point,interval):
     return np.where(np.logical_and(interval == -1,point == 1),-1,point)
 
 #Get interval as inf
+@jit(nopython=True)
 def get_inf(point,interval):
     """
     Get interval [X,B] given interval [A,B] and point X in [A,B]
@@ -653,8 +724,8 @@ def update_partition(b_break,intervals,cover_intervals,block,index_interval,divi
     -------
     numpy.arrays of intervals and block
     """
-    intervals = np.append(intervals,cover_intervals,0) #Add new intervals
-    intervals = np.delete(intervals,index_interval,0) #Delete broken interval
+    intervals.update(cover_intervals.reshape((cover_intervals.shape[0]*cover_intervals.shape[1],)).tolist()) #Add new intervals
+    intervals.delete(index_interval) #Delete broken interval
     max_block = np.max(block) #Maximum block
     block = np.delete(block,index_interval) #Delete block of broken interval
     block = np.where(block == b_break,division_old,block) #New block of the kept intervals
@@ -662,7 +733,8 @@ def update_partition(b_break,intervals,cover_intervals,block,index_interval,divi
     return intervals,block
 
 #One step reduction
-def reduce(intervals):
+@jit(nopython=True)
+def reduce(unite_intervals):
     """
     One step of intervals reduction
     -------
@@ -676,15 +748,16 @@ def reduce(intervals):
     -------
     numpy.array of intervals and logical indicating whether the returned intervals are reduced
     """
+    intervals = unite_intervals.finalize().copy()
     for i in range(intervals.shape[0] - 1):
         for j in range(i + 1,intervals.shape[0]):
             if (np.where(intervals[i,:] == -1,1,0) == np.where(intervals[j,:] == -1,1,0)).all():
                 if np.sum(intervals[i,:] != intervals[j,:]) == 1:
                     united = np.where(intervals[i,:] != intervals[j,:],-1,intervals[i,:])
-                    intervals = np.delete(intervals,np.array([i,j]),0)
-                    intervals = np.append(intervals,united.reshape((1,united.shape[0])),0)
-                    return intervals,False
-    return intervals,True
+                    unite_intervals.delete(np.array([i,j]))
+                    unite_intervals.update(united.reshape((united.shape[0],)).tolist())
+                    return unite_intervals,False
+    return unite_intervals,True
 
 #Sample neighbor by breaking interval
 def break_interval(point_break,index_interval,interval_break,b_break,intervals,block,nval,tab_train,tab_val,step,rng,num_classes = 2,compute_error = True):
@@ -762,7 +835,7 @@ def break_interval(point_break,index_interval,interval_break,b_break,intervals,b
 
     #Compute error
     if compute_error:
-        error = error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes)
+        error = error_partition(tab_train,tab_val,intervals.finalize(),block,nval,rng,num_classes)
     else:
         error = None
 
@@ -817,8 +890,10 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,rng,num_class
     """
     #Delete intervals and block united
     which_intervals = np.where(np.logical_or(block == unite[0],block == unite[1]))[0]
-    unite_intervals = intervals[which_intervals,:]
-    intervals = np.delete(intervals,which_intervals,0)
+    unite_intervals = alist(intervals.ncol)
+    tmp = intervals.finalize()[which_intervals,:]
+    unite_intervals.update(tmp.reshape((tmp.shape[0]*tmp.shape[1],)).tolist())
+    intervals.delete(which_intervals)
     block = np.delete(block,which_intervals)
 
     #Try to reduce united intervals
@@ -827,12 +902,12 @@ def unite_blocks(unite,intervals,block,nval,tab_train,tab_val,step,rng,num_class
         unite_intervals,reduced = reduce(unite_intervals)
 
     #Update intervals and block
-    intervals = np.append(intervals,unite_intervals,0)
+    intervals.update(unite_intervals.reshape((unite_intervals.shape[0]*unite_intervals.shape[1],)))
     block = np.append(block,np.repeat(np.min(unite),unite_intervals.shape[0]))
     block = np.where(block > np.max(unite),block - 1,block)
 
     #Compute error
-    error = error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes)
+    error = error_partition(tab_train,tab_val,intervals.finalize(),block,nval,rng,num_classes)
 
     #Return
     if not step:
@@ -891,7 +966,7 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,rng,num_cl
     block[block == b_dis] = division_new
 
     #Compute error
-    error = error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes)
+    error = error_partition(tab_train,tab_val,intervals.finalize(),block,nval,rng,num_classes)
     #Return
     if not step:
         return error
@@ -900,24 +975,28 @@ def dismenber_block(b_dis,intervals,block,nval,tab_train,tab_val,step,rng,num_cl
 
 #Sample a neighbor and visit
 def sample_visit_neighbor(kind_nei,prob_dismember,prob_break,block,intervals,bnval,tab_train_batch,tab_val_batch,rng,num_classes):
+    t0 = time.time()
     if kind_nei == 0: #Unite intervals
         #Sample block to unite intervals
         unite = rng.choice(np.arange(np.max(block) + 1),size=(2,),replace = False)
         #Sample intervals to unite in the sampled block and return the result
-        return unite_blocks(unite,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
+        r = unite_blocks(unite,copy.deepcopy(intervals),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
     elif kind_nei == 1: #Dismenber intervals
         #Sample block to dismenber intervals
         b_dis = rng.choice(np.arange(np.max(block) + 1),size=(1,),p = prob_dismember)
         #Sample dismenbering of the sampled block and return the result
-        return dismenber_block(b_dis,intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
+        r = dismenber_block(b_dis,copy.deepcopy(intervals),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
     elif kind_nei == 2: #Break interval
         #Sample point to break on
         point_break = tab_train_batch[rng.choice(np.arange(tab_train_batch.shape[0]),size = (1,),p = prob_break),:-num_classes][0,:]
-        interval_index = np.where(get_interval(point_break,intervals))[0]
+        interval_index = np.where(get_interval(point_break,intervals.finalize()))[0]
         #Break interval on sampled point and return the result
-        return break_interval(point_break,interval_index,intervals[interval_index,:].copy(),block[interval_index].copy(),intervals.copy(),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
+        r = break_interval(point_break,interval_index,intervals.finalize()[interval_index,:].copy(),block[interval_index].copy(),copy.deepcopy(intervals),block.copy(),bnval,tab_train_batch,tab_val_batch,step = True,rng = rng,num_classes = num_classes)
+    #print(time.time() - t0)
+    return r
 
 #Test if intervals contain/are contained
+@jit(nopython=True)
 def contained(I1,I2):
     """
     Test if two intervals contain/are contained

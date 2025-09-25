@@ -102,16 +102,19 @@ def get_ftable(data,unique,num_classes = 2):
     -------
     numpy.array with the frequency table
     """
-    #Get domain
-    if not unique:
-        domain = np.unique(data[:,:-1],axis = 0)
-    else:
+    #Unique
+    if unique:
         domain = data[:,:-1]
-    #Compute frequencies
-    freq = np.apply_along_axis(lambda x: get_fpoint(x,data,num_classes),1,domain)
+        freq = np.where(data[:,-1] == 0,1,0).reshape((domain.shape[0],1))
+        for c in range(num_classes-1):
+            freq = np.append(freq,np.where(data[:,-1] == c+1,1,0).reshape((domain.shape[0],1)),1)
+    #Not unique
+    else:
+        domain = np.unique(data[:,:-1],axis = 0)
+        freq = np.apply_along_axis(lambda x: get_fpoint(x,data,num_classes),1,domain)
     return np.append(domain,np.array(freq).reshape((domain.shape[0],num_classes)),1)
 
-#Generate picture of paritiion
+#Generate picture of partition
 def picture_partition(intervals,block,title = 'abc',filename = 'image'):
     """
     Generate image of Boolean lattice colored by a given partition partition and save in a .pdf file

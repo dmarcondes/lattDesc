@@ -7,6 +7,7 @@ import time
 from alive_progress import alive_bar
 import os
 from joblib import Parallel, delayed
+import copy
 
 #Empirical risk minimization
 def ERM(train = None,test= None,unique = False,num_classes = 2,tab_train = None,tab_test = None):
@@ -157,18 +158,19 @@ def sdesc_BIPL(train = None,val = None,test = None,tab_train = None,tab_val = No
     #Initial partition
     print('- Initializing objects')
     if intervals is None or block is None: #If initial partition is not given, initialize
-        intervals = -1 + np.zeros((1,d)) #Array with intervals
+        intervals = ut.alist(d)
+        intervals.update((-1 + np.zeros((d,))).tolist()) #Array with intervals
         block = np.array([0]) #Array with block of each interval
 
     #Store error
-    current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes) #Get error
+    current_error = ut.error_partition(tab_train,tab_val,intervals.finalize(),block,nval,rng,num_classes) #Get error
     best_error = current_error #Best error_batch
-    best_intervals = intervals.copy() #Best intervals
+    best_intervals = copy.deepcopy(intervals) #Best intervals
     best_block = block.copy() #Best block
 
     #If video
     if video:
-        dt.picture_partition(intervals,block,title = 'Epoch 0 Error = ' + str(round(current_error,3)),filename = filename + '_' + str(0).zfill(5))
+        dt.picture_partition(intervals.finalize(),block,title = 'Epoch 0 Error = ' + str(round(current_error,3)),filename = filename + '_' + str(0).zfill(5))
 
     #Objects to trace
     trace_error = np.array([]) #Trace algorithm time
@@ -194,9 +196,9 @@ def sdesc_BIPL(train = None,val = None,test = None,tab_train = None,tab_val = No
 
                 #Compute probabilities
                 total_unite = np.array(math.comb(np.max(block) + 1,2)).astype('float64') #Number of ways of uniting blocks
-                break_points = np.array(1 - ut.get_limits_some_interval(intervals,tab_train_batch[:,0:-num_classes])) #Points on which intervals can be broken
+                break_points = np.array(1 - ut.get_limits_some_interval(intervals.finalize(),tab_train_batch[:,0:-num_classes])) #Points on which intervals can be broken
                 total_break = np.sum(break_points).astype('float64') #Number of points on which intervals can be broken (internal points)
-                dismember = np.power(np.bincount(block) - 1,2).astype('float64') - 1 #Number of ways of dismemebering blocks for each blocks
+                dismember = np.power(np.bincount(block) - 1,2).astype('float64') - 1 #Number of ways of dismemebering blocks for each block
                 dismember[dismember < 0 ] = 0 #Correct blocks with only one interval
                 total_dismember = np.sum(dismember) #Total number of ways of dismemebering blocks
                 total = total_unite + total_break + total_dismember #Total manners of obtaining neighbors
@@ -204,7 +206,6 @@ def sdesc_BIPL(train = None,val = None,test = None,tab_train = None,tab_val = No
 
                 #Sample kind of step at each neighbor
                 kind_nei = rng.choice(np.array([0,1,2]),size=(sample,),p = prob_manners) #Sample kind of step to take at each sample neighbo
-
                 #Objects to store neighbors
                 error_batch = np.array([]) #Store error
 
@@ -222,15 +223,15 @@ def sdesc_BIPL(train = None,val = None,test = None,tab_train = None,tab_val = No
                 #Update partition at each batch
                 which_nei = np.where(error_batch == np.min(error_batch))[0][0] #Get first neighbor with the least error
                 block = store_nei[which_nei]['block'].copy() #Update block
-                intervals = store_nei[which_nei]['intervals'].copy() #Update interval
+                intervals = copy.deepcopy(store_nei[which_nei]['intervals']) #Update interval
                 del store_nei, error_batch #Delete trace of neighbors
             #Get error current partition at the end of epoch
-            current_error = ut.error_partition(tab_train,tab_val,intervals,block,nval,rng,num_classes)
+            current_error = ut.error_partition(tab_train,tab_val,intervals.finalize(),block,nval,rng,num_classes)
 
             #Store current partition as best with it has the least error so far
             if current_error < best_error:
                 best_error = current_error #Store error
-                best_intervals = intervals.copy() #Store intervals
+                best_intervals = copy.deepcopy(intervals) #Store intervals
                 best_block = block.copy() #Store blocks
                 print('Time: ' + str(round(time.time() - tinit,2)) + ' Error: ' + str(round(best_error,3))) #Print error
 
@@ -240,12 +241,12 @@ def sdesc_BIPL(train = None,val = None,test = None,tab_train = None,tab_val = No
 
             #If video
             if video:
-                dt.picture_partition(intervals,block,title = 'Epoch ' + str(e) + ' Error = ' + str(round(current_error,3)),filename = filename + '_' + str(e + 1).zfill(5))
+                dt.picture_partition(intervals.finalize(),block,title = 'Epoch ' + str(e) + ' Error = ' + str(round(current_error,3)),filename = filename + '_' + str(e + 1).zfill(5))
             bar() #Update bar
     #Test error
     test_error = None #Initialize test error
     if tab_test is not None: #Compute test error if there is test data
-        test_error = ut.error_partition(tab_train,tab_test,intervals,block,np.sum(tab_test[:,-num_classes:]),rng,num_classes)
+        test_error = ut.error_partition(tab_train,tab_test,intervals.finalize(),block,np.sum(tab_test[:,-num_classes:]),rng,num_classes)
 
     #Create video
     if video:
@@ -253,11 +254,11 @@ def sdesc_BIPL(train = None,val = None,test = None,tab_train = None,tab_val = No
         os.system("ffmpeg -framerate " + str(framerate) + " -i " + filename + "_%5d.png " + filename + ".mp4")
 
     #Estimated function
-    label_intervals = ut.estimate_label_partition(tab_train,best_intervals,best_block,rng,num_classes)
-    f = ut.get_estimated_function(tab_train,best_intervals,best_block,rng,num_classes)
+    label_intervals = ut.estimate_label_partition(tab_train,best_intervals.finalize(),best_block,rng,num_classes)
+    f = ut.get_estimated_function(tab_train,best_intervals.finalize(),best_block,rng,num_classes)
 
     #Return
-    return {'block': best_block,'intervals': best_intervals,'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}
+    return {'block': best_block,'intervals': best_intervals.finalize(),'best_error': best_error,'test_error': test_error,'trace_error': trace_error,'trace_time': trace_time,'label_intervals': label_intervals,'f': f}
 
 #ISI algorithm
 def ISI(train = None,test = None,tab_train = None,tab_test = None,intervals = None,unique = False,key = 0):
@@ -306,7 +307,8 @@ def ISI(train = None,test = None,tab_train = None,tab_test = None,intervals = No
 
     #Initialize intervals
     if intervals is None:
-        intervals = -1 + np.zeros((1,d))
+        intervals = ut.alist(d)
+        intervals.update((-1 + np.zeros((d,))).tolist())
 
     #Break intervals in sequence
     print('- Running...')
@@ -315,41 +317,46 @@ def ISI(train = None,test = None,tab_train = None,tab_test = None,intervals = No
         for i in range(zero_points.shape[0]): #For each zero point
             point = zero_points[i,:] #Get points
             #Get intervals that contain point
-            which_interval = ut.get_interval(point,intervals)
+            which_interval = ut.get_interval(point,intervals.finalize())
             if np.sum(which_interval) > 0: #If there is an interval that contains the point
                 #Delete these intervals
-                del_intervals = np.delete(intervals,np.where(which_interval),0)
+                del_intervals = copy.deepcopy(intervals)
+                del_intervals.delete(which_interval)
                 for k in np.where(which_interval)[0]: #For each interval that contains the point
+                    print(intervals.size/intervals.ncol)
                     #Get the interval
-                    break_interval = intervals[k,:]
+                    break_interval = intervals.finalize()[k,:]
                     #Get limits of interval
                     A = np.where(break_interval == -1,0,break_interval)
                     B = np.where(break_interval == -1,1,break_interval)
                     #Get intervals obtained by breaking on the point
+                    t0 = time.time()
                     for j in np.where(np.logical_and(point == 1,A == 0))[0]: #Intervals with limit A
+                        tt1 = time.time()
                         x = np.zeros((1,d))
                         x[0,j] = 1
                         x = 1 - x
                         B_tmp = np.minimum(B,x)
                         interval_tmp = np.where((A == 0)*(B_tmp == 1),-1,A)
-                        if del_intervals.shape[0] > 0:
-                            if not ut.contained_some(interval_tmp[0,:],del_intervals): #Test if new interval is maximal
-                                intervals = np.append(intervals,interval_tmp,0)
+                        if del_intervals.size > 0:
+                            if not ut.contained_some(interval_tmp[0,:],del_intervals.finalize()): #Test if new interval is maximal
+                                intervals.update(interval_tmp[0])
                         else:
-                            intervals = np.append(intervals,interval_tmp,0)
+                            intervals.update(interval_tmp[0])
                     for j in np.where(np.logical_and(point == 0,B == 1))[0]: #Intervals with limit B
                         x = np.zeros((1,d))
                         x[0,j] = 1
                         A_tmp = np.maximum(A,x)
                         interval_tmp = np.where((A_tmp == 0)*(B == 1),-1,B)
-                        if del_intervals.shape[0] > 0: #Test if new interval is maximal
-                            if not ut.contained_some(interval_tmp[0,:],del_intervals):
-                                intervals = np.append(intervals,interval_tmp,0)
+                        if del_intervals.size > 0: #Test if new interval is maximal
+                            if not ut.contained_some(interval_tmp[0,:],del_intervals.finalize()):
+                                intervals.update(interval_tmp[0])
                         else:
-                            intervals = np.append(intervals,interval_tmp,0)
-                intervals = np.delete(intervals,np.where(which_interval)[0],0) #Delete intervals that contain point
+                            intervals.update(interval_tmp[0])
+                intervals.delete(which_interval) #Delete intervals that contain point
                 #Erase intervals that do not contain one points
-                intervals = np.delete(intervals,np.where(np.sum(ut.get_elements_each_interval(intervals,one_points),1) == 0)[0],0)
+                not_contain = np.sum(ut.get_elements_each_interval(intervals.finalize(),one_points),1) == 0
+                intervals.delete(not_contain)
             bar()
     total_time = time.time() - tinit
 
